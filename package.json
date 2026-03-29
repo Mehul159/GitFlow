@@ -1,0 +1,115 @@
+{
+  "name": "gitflow-studio",
+  "displayName": "GitFlow Studio",
+  "description": "Visual, AI-ready Git graph and workflows — Figma-like canvas inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "gitflow-studio",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "SCM Providers"
+  ],
+  "activationEvents": [
+    "onView:gitflow-studio.canvas",
+    "onCommand:gitflow-studio.open",
+    "onCommand:gitflow-studio.refresh",
+    "onCommand:gitflow-studio.commandPalette"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitflow-studio.open",
+        "title": "GitFlow Studio: Open Canvas",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "gitflow-studio.refresh",
+        "title": "GitFlow Studio: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitflow-studio.commandPalette",
+        "title": "GitFlow Studio: Command Palette"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitflow-studio",
+          "title": "GitFlow Studio",
+          "icon": "resources/gitflow-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitflow-studio": [
+        {
+          "type": "webview",
+          "id": "gitflow-studio.canvas",
+          "name": "Canvas"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GitFlow Studio",
+      "properties": {
+        "gitflow-studio.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Google Gemini API key (optional, for AI commit messages).",
+          "order": 1
+        },
+        "gitflow-studio.groqApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Groq API key (optional, for fast suggestions).",
+          "order": 2
+        },
+        "gitflow-studio.maxCommits": {
+          "type": "number",
+          "default": 180,
+          "minimum": 20,
+          "maximum": 500,
+          "description": "Maximum commits to load on the graph."
+        },
+        "gitflow-studio.pullWithRebase": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use git pull --rebase by default from the toolbar."
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitflow-studio.refresh",
+          "when": "view == gitflow-studio.canvas",
+          "group": "navigation"
+        },
+        {
+          "command": "gitflow-studio.open",
+          "when": "view == gitflow-studio.canvas",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:webview && npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build:webview": "cd webview && npm install && npm run build",
+    "dev:webview": "cd webview && npm run dev",
+    "smoke": "npm run compile && node scripts/smoke-git-load.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {}
+}
