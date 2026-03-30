@@ -130,20 +130,26 @@ export default function App() {
             setPushNoUpstream({ branch: d.branch, remote: d.remote });
           }
           break;
-        case "mergeResult":
-          if (d.status === "ok") {
+        case "mergeResult": {
+          const st = (d as { status?: unknown }).status;
+          if (st === "ok") {
             break;
           }
-          if (d.status === "conflict" || d.status === "error") {
+          if (st === "conflict" || st === "error") {
+            const payload = d as {
+              message?: unknown;
+              conflictFiles?: unknown;
+            };
             setMergeOutcome({
-              status: d.status,
-              message: typeof d.message === "string" ? d.message : undefined,
-              conflictFiles: Array.isArray(d.conflictFiles)
-                ? (d.conflictFiles as string[])
+              status: st,
+              message: typeof payload.message === "string" ? payload.message : undefined,
+              conflictFiles: Array.isArray(payload.conflictFiles)
+                ? (payload.conflictFiles as string[])
                 : undefined,
             });
           }
           break;
+        }
         default:
           break;
       }

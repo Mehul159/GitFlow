@@ -263,7 +263,7 @@ export function Toolbar(props: {
       <BranchModal
         isOpen={branchModal.isOpen}
         onConfirm={handleBranchCreate}
-        onCancel={() => setBranchModal({ isOpen: false })}
+        onClose={() => setBranchModal({ isOpen: false })}
       />
 
       {/* Pull Confirm Modal */}
@@ -273,23 +273,23 @@ export function Toolbar(props: {
         message="Do you want to pull with rebase?"
         confirmLabel="Pull with Rebase"
         cancelLabel="Pull (merge)"
-        confirmVariant="warning"
+        variant="warning"
         onConfirm={() => handlePull(true)}
-        onCancel={() => handlePull(false)}
+        onClose={() => handlePull(false)}
       />
 
       {/* Merge Modal */}
       <MergeModal
         isOpen={mergeModalOpen}
         onConfirm={handleMerge}
-        onCancel={() => setMergeModalOpen(false)}
+        onClose={() => setMergeModalOpen(false)}
       />
 
       {/* Rebase Modal */}
       <RebaseModal
         isOpen={rebaseModal}
         onConfirm={handleRebase}
-        onCancel={() => setRebaseModal(false)}
+        onClose={() => setRebaseModal(false)}
       />
 
       {/* Force Push Confirm */}
@@ -298,9 +298,9 @@ export function Toolbar(props: {
         title="Force Push"
         message="Force push is dangerous and can overwrite remote history. Are you sure?"
         confirmLabel="Force Push"
-        confirmVariant="danger"
+        variant="danger"
         onConfirm={handleForcePush}
-        onCancel={() => setForcePushModal(false)}
+        onClose={() => setForcePushModal(false)}
       />
 
       {/* Push Upstream Modal */}

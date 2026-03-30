@@ -75,7 +75,6 @@ export async function loadGraph(
       COMMIT_MARKER,
     ].join("%n");
 
-    console.log("[GFS] Running git log command...");
     const logOut = await execGit(repoRoot, [
       "log",
       "--all",
@@ -83,21 +82,15 @@ export async function loadGraph(
       `--pretty=format:${fmt}`,
       "--topo-order",
     ]);
-    
-    console.log("[GFS] Git log raw output length:", logOut.length);
-    console.log("[GFS] Git log first 500 chars:", logOut.slice(0, 500));
 
     const blocks = logOut
       .split(COMMIT_MARKER)
       .map((b) => b.trim())
       .filter(Boolean);
-    
-    console.log("[GFS] Number of commit blocks:", blocks.length);
 
     for (const block of blocks) {
       const lines = block.split("\n");
       if (lines.length < 6) {
-        console.log("[GFS] Skipping commit block with less than 6 lines:", lines.length);
         continue;
       }
       const [hash, parentsLine, subject, author, email, ct, ...decRest] = lines;

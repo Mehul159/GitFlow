@@ -113,15 +113,11 @@ class GitFlowWebviewViewProvider implements vscode.WebviewViewProvider {
    * the real history.
    */
   private getGitRoot(): string | null {
-    console.log("[GFS] getGitRoot called");
-    console.log("[GFS] workspaceFolders:", vscode.workspace.workspaceFolders?.length ?? 0);
-    
     const candidates: string[] = [];
     const seen = new Set<string>();
     
     // First, check workspace folders
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      console.log("[GFS] Checking workspace folder:", folder.uri.fsPath);
       const root = getGitRootSync(folder.uri.fsPath);
       if (!root) continue;
       const key =
@@ -129,18 +125,15 @@ class GitFlowWebviewViewProvider implements vscode.WebviewViewProvider {
       if (seen.has(key)) continue;
       seen.add(key);
       candidates.push(root);
-      console.log("[GFS] Found git root in workspace:", root);
     }
     
     // FALLBACK: If no workspace folders, try the workspace root directly
     if (candidates.length === 0) {
       const wsRoot = this.getWorkspaceRoot();
       if (wsRoot) {
-        console.log("[GFS] Trying workspace root:", wsRoot);
         const root = getGitRootSync(wsRoot);
         if (root) {
           candidates.push(root);
-          console.log("[GFS] Found git root from workspace root:", root);
         }
       }
     }
@@ -151,17 +144,14 @@ class GitFlowWebviewViewProvider implements vscode.WebviewViewProvider {
     
     if (candidates.length > 0) {
       const result = pickBestGitRoot(candidates, activePath);
-      console.log("[GFS] Selected git root:", result);
       return result;
     }
-    
+
     if (activePath) {
       const result = getGitRootSync(path.dirname(activePath));
-      console.log("[GFS] Found git root from active path:", result);
       return result;
     }
-    
-    console.log("[GFS] No git root found!");
+
     return null;
   }
 

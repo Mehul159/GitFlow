@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { motion } from "framer-motion";
 import ReactFlow, {
   Background,
@@ -12,6 +12,7 @@ import ReactFlow, {
   type Connection,
   type Edge,
   type Node,
+  type OnConnectStartParams,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -203,6 +204,8 @@ function GraphCanvasBody(props: {
     intoRemote: boolean;
   }) => void;
 }) {
+  const connectStartRef = useRef<{ nodeId: string; handleType: string } | null>(null);
+
   const flow = useMemo(() => {
     return props.view === "commitGraph"
       ? buildCommitGraphFlow(props.graph)
@@ -300,23 +303,51 @@ function GraphCanvasBody(props: {
     [nodes]
   );
 
+  const onConnectStart = useCallback(
+    (_event: React.MouseEvent | React.TouchEvent, params: OnConnectStartParams) => {
+      if (params.nodeId && params.handleType) {
+        connectStartRef.current = {
+          nodeId: params.nodeId,
+          handleType: params.handleType,
+        };
+      }
+    },
+    []
+  );
+
   const onConnect = useCallback(
     (c: Connection) => {
       if (!c.source || !c.target || !props.onBranchMergeRequest) {
         return;
       }
-      const s = nodes.find((n) => n.id === c.source);
-      const t = nodes.find((n) => n.id === c.target);
-      if (!s || !t) {
+
+      const dragOriginNodeId = connectStartRef.current?.nodeId ?? null;
+      connectStartRef.current = null;
+
+      const sourceNode = nodes.find((n) => n.id === c.source);
+      const targetNode = nodes.find((n) => n.id === c.target);
+      if (!sourceNode || !targetNode) {
         return;
       }
-      const sd = s.data as BranchTreeCardData;
-      const td = t.data as BranchTreeCardData;
+      const sourceData = sourceNode.data as BranchTreeCardData;
+      const targetData = targetNode.data as BranchTreeCardData;
+
+      let fromData: BranchTreeCardData;
+      let intoData: BranchTreeCardData;
+
+      if (dragOriginNodeId === c.target) {
+        fromData = targetData;
+        intoData = sourceData;
+      } else {
+        fromData = sourceData;
+        intoData = targetData;
+      }
+
       props.onBranchMergeRequest({
-        from: sd.name,
-        into: td.name,
-        fromRemote: sd.isRemote,
-        intoRemote: td.isRemote,
+        from: fromData.name,
+        into: intoData.name,
+        fromRemote: fromData.isRemote,
+        intoRemote: intoData.isRemote,
       });
     },
     [nodes, props.onBranchMergeRequest]
@@ -342,6 +373,7 @@ function GraphCanvasBody(props: {
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onConnectStart={branchTreeConnect ? onConnectStart : undefined}
         onConnect={branchTreeConnect ? onConnect : undefined}
         isValidConnection={branchTreeConnect ? isValidConnection : undefined}
         nodeTypes={nodeTypes}
@@ -364,9 +396,9 @@ function GraphCanvasBody(props: {
             <span className="font-semibold text-gfs-text">Drag to merge</span>
             <span className="text-gfs-muted">
               {" "}
-              — pull from the <span className="text-gfs-accent">right handle</span> of
-              one branch to the <span className="text-gfs-accent">left handle</span> of
-              another. The target must be a local branch (solid card).
+              — drag from the branch you want to merge{" "}
+              <span className="text-gfs-accent">into</span> the branch you want
+              to receive the changes. Drop target must be a local branch.
             </span>
           </Panel>
         ) : null}
