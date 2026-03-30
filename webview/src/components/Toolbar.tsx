@@ -1,4 +1,5 @@
 import type { AheadBehind, MergeState } from "../types";
+import type { CanvasViewMode } from "../lib/canvasGraph";
 import { ConfirmModal, BranchModal, MergeModal, RebaseModal, PushUpstreamModal } from "./modals";
 import { useState } from "react";
 
@@ -18,19 +19,14 @@ export function Toolbar(props: {
   aheadBehind: AheadBehind | null;
   pushNoUpstream: PushNoUpstream | null;
   setPushNoUpstream: (value: PushNoUpstream | null) => void;
+  canvasView: CanvasViewMode;
+  onCanvasViewChange: (v: CanvasViewMode) => void;
 }) {
   const [branchModal, setBranchModal] = useState<BranchModalState>({ isOpen: false });
   const [pullConfirm, setPullConfirm] = useState(false);
   const [mergeModalOpen, setMergeModalOpen] = useState(false);
   const [rebaseModal, setRebaseModal] = useState(false);
   const [forcePushModal, setForcePushModal] = useState(false);
-
-  console.log("[GFS] Toolbar rendered, hasRepo:", props.hasRepo, "api:", props.api ? "set" : "null");
-  
-  if (!props.api) {
-    console.log("[GFS] No API - toolbar hidden");
-    return null;
-  }
 
   const ms = props.mergeState;
   const conflict =
@@ -139,6 +135,47 @@ export function Toolbar(props: {
         ) : null}
         
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-gfs-surface/30">
+          <div
+            className="mr-1 flex shrink-0 rounded-lg bg-gfs-bg/80 p-0.5 ring-1 ring-gfs-surface2"
+            role="group"
+            aria-label="Canvas view"
+          >
+            <button
+              type="button"
+              title="Commit graph: commits and parent links"
+              className={[
+                "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                props.canvasView === "commitGraph"
+                  ? "bg-gfs-accent text-white shadow-sm"
+                  : "text-gfs-muted hover:text-gfs-text",
+              ].join(" ")}
+              onClick={() => props.onCanvasViewChange("commitGraph")}
+            >
+              Commit graph
+            </button>
+            <button
+              type="button"
+              title="Branch tree: folders, health, stale branches"
+              className={[
+                "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                props.canvasView === "branchTree"
+                  ? "bg-gfs-accent text-white shadow-sm"
+                  : "text-gfs-muted hover:text-gfs-text",
+              ].join(" ")}
+              onClick={() => props.onCanvasViewChange("branchTree")}
+            >
+              Branch tree
+            </button>
+          </div>
+
+          <span className="mx-0.5 h-5 w-px bg-gfs-surface2" />
+
+          {!props.api ? (
+            <span className="text-[11px] text-gfs-muted">Git actions require the extension host.</span>
+          ) : null}
+
+          {props.api ? (
+            <>
           {/* Branch + Button */}
           <button
             type="button"
@@ -217,6 +254,8 @@ export function Toolbar(props: {
           ) : (
             <span className="ml-auto text-[10px] text-gfs-muted">no upstream</span>
           )}
+            </>
+          ) : null}
         </div>
       </div>
 

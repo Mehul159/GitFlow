@@ -13,11 +13,14 @@ import { CommitGraph } from "./components/CommitGraph";
 import { CommitComposer, DetailPanel } from "./components/DetailPanel";
 import { Toolbar } from "./components/Toolbar";
 import { CommandPalette } from "./components/CommandPalette";
+import type { CanvasViewMode } from "./lib/canvasGraph";
 import { StashPanel } from "./components/StashPanel";
 import { RemotesPanel } from "./components/RemotesPanel";
 import { TagsPanel } from "./components/TagsPanel";
 import { ToolsPanel } from "./components/ToolsPanel";
 import { TextDocModal } from "./components/TextDocModal";
+import { BranchMergeConnectModal } from "./components/modals/BranchMergeConnectModal";
+import { MergeBranchOutcomeModal } from "./components/modals/MergeBranchOutcomeModal";
 import AnimatedTabs from "@/components/ui/animated-tabs";
 import Badge from "@/components/ui/badge";
 
@@ -51,6 +54,18 @@ export default function App() {
   } | null>(null);
   const [diffAnchor, setDiffAnchor] = useState<string | null>(null);
   const [pushNoUpstream, setPushNoUpstream] = useState<{ branch: string; remote: string } | null>(null);
+  const [canvasView, setCanvasView] = useState<CanvasViewMode>("commitGraph");
+  const [branchMergeDraft, setBranchMergeDraft] = useState<{
+    from: string;
+    into: string;
+    fromRemote: boolean;
+    intoRemote: boolean;
+  } | null>(null);
+  const [mergeOutcome, setMergeOutcome] = useState<{
+    status: "conflict" | "error";
+    message?: string;
+    conflictFiles?: string[];
+  } | null>(null);
 
   const hasRepo = graph !== null && graphErr === null;
   const mergeState = extras?.mergeState ?? emptyMerge;
@@ -113,6 +128,20 @@ export default function App() {
         case "pushNoUpstream":
           if (typeof d.branch === "string" && typeof d.remote === "string") {
             setPushNoUpstream({ branch: d.branch, remote: d.remote });
+          }
+          break;
+        case "mergeResult":
+          if (d.status === "ok") {
+            break;
+          }
+          if (d.status === "conflict" || d.status === "error") {
+            setMergeOutcome({
+              status: d.status,
+              message: typeof d.message === "string" ? d.message : undefined,
+              conflictFiles: Array.isArray(d.conflictFiles)
+                ? (d.conflictFiles as string[])
+                : undefined,
+            });
           }
           break;
         default:
@@ -188,6 +217,18 @@ export default function App() {
       api?.postMessage({ type: "checkoutRemote", name });
     },
     [api]
+  );
+
+  const onBranchMergeRequest = useCallback(
+    (p: {
+      from: string;
+      into: string;
+      fromRemote: boolean;
+      intoRemote: boolean;
+    }) => {
+      setBranchMergeDraft(p);
+    },
+    []
   );
 
   const onShiftCommit = useCallback(
@@ -396,6 +437,8 @@ export default function App() {
             aheadBehind={aheadBehind}
             pushNoUpstream={pushNoUpstream}
             setPushNoUpstream={setPushNoUpstream}
+            canvasView={canvasView}
+            onCanvasViewChange={setCanvasView}
           />
           <div className="min-h-0 flex-1">
             {graphErr ? (
@@ -420,9 +463,13 @@ export default function App() {
               <ReactFlowProvider>
                 <CommitGraph
                   graph={graph}
+                  view={canvasView}
                   selected={selectedCommit}
                   onSelect={setSelectedCommit}
                   onShiftClickCommit={hasRepo ? onShiftCommit : undefined}
+                  onBranchMergeRequest={
+                    hasRepo && api ? onBranchMergeRequest : undefined
+                  }
                 />
               </ReactFlowProvider>
             )}
@@ -448,6 +495,38 @@ export default function App() {
           />
         </main>
       </div>
+
+      <BranchMergeConnectModal
+        isOpen={branchMergeDraft !== null}
+        from={branchMergeDraft?.from ?? ""}
+        into={branchMergeDraft?.into ?? ""}
+        fromRemote={branchMergeDraft?.fromRemote ?? false}
+        intoRemote={branchMergeDraft?.intoRemote ?? false}
+        workingTreeDirty={Boolean(status && !status.clean)}
+        onClose={() => setBranchMergeDraft(null)}
+        onConfirm={(squash, noFf) => {
+          if (!branchMergeDraft || !api) {
+            return;
+          }
+          api.postMessage({
+            type: "mergeBranches",
+            into: branchMergeDraft.into,
+            from: branchMergeDraft.from,
+            squash,
+            noFf,
+          });
+          setBranchMergeDraft(null);
+        }}
+      />
+
+      <MergeBranchOutcomeModal
+        isOpen={mergeOutcome !== null}
+        status={mergeOutcome?.status ?? "error"}
+        message={mergeOutcome?.message}
+        conflictFiles={mergeOutcome?.conflictFiles}
+        api={api}
+        onClose={() => setMergeOutcome(null)}
+      />
 
       <CommandPalette
         open={paletteOpen}

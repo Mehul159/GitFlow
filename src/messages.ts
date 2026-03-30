@@ -40,6 +40,13 @@ export type WebviewToHost =
       force?: boolean;
     }
   | { type: "merge"; branch: string; squash?: boolean; noFf?: boolean }
+  | {
+      type: "mergeBranches";
+      into: string;
+      from: string;
+      squash?: boolean;
+      noFf?: boolean;
+    }
   | { type: "mergeAbort" }
   | { type: "rebase"; onto: string }
   | { type: "rebaseAbort" }
@@ -103,4 +110,10 @@ export type HostToWebview =
       type: "pushNoUpstream";
       branch: string;
       remote: string;
+    }
+  | {
+      type: "mergeResult";
+      status: "ok" | "conflict" | "error";
+      message?: string;
+      conflictFiles?: string[];
     };

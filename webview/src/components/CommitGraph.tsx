@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
+import { motion } from "framer-motion";
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -7,14 +8,23 @@ import ReactFlow, {
   Panel,
   useEdgesState,
   useNodesState,
+  useReactFlow,
+  type Connection,
   type Edge,
   type Node,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
 import type { GraphPayload } from "../types";
-import { layoutCommitPositions, NODE_H, NODE_W } from "../lib/layoutGraph";
-import { CommitNode, type CommitNodeData } from "./CommitNode";
+import {
+  buildBranchTreeFlow,
+  buildCommitGraphFlow,
+  type BranchTreeCardData,
+  type CanvasViewMode,
+} from "../lib/canvasGraph";
+import { BranchFolderNode } from "./BranchFolderNode";
+import { BranchTreeCardNode } from "./BranchTreeCardNode";
+import { CommitNode } from "./CommitNode";
 
 function EmptyRootNode() {
   return (
@@ -49,80 +59,6 @@ function remoteBranchLabels(g: GraphPayload): string[] {
     }
   }
   return [...s].sort((a, b) => a.localeCompare(b));
-}
-
-function initials(name: string): string {
-  const p = name.trim().split(/\s+/);
-  if (p.length === 0) {
-    return "?";
-  }
-  if (p.length === 1) {
-    return p[0].slice(0, 2).toUpperCase();
-  }
-  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
-}
-
-function refsAt(hash: string, payload: GraphPayload): string[] {
-  const labels: string[] = [];
-  for (const r of payload.refs) {
-    if (r.hash !== hash) {
-      continue;
-    }
-    if (r.fullName.startsWith("refs/heads/")) {
-      labels.push(r.name);
-    } else if (r.fullName.startsWith("refs/remotes/")) {
-      labels.push(`⎇ ${r.name}`);
-    } else if (r.fullName.startsWith("refs/tags/")) {
-      labels.push(r.name);
-    }
-  }
-  return labels;
-}
-
-function buildFlow(
-  graph: GraphPayload
-): { nodes: Node<CommitNodeData>[]; edges: Edge[] } {
-  const { commits, head } = graph;
-  const pos = layoutCommitPositions(commits);
-  const commitSet = new Set(commits.map((c) => c.hash));
-
-  const nodes: Node<CommitNodeData>[] = commits.map((c) => {
-    const labels = refsAt(c.hash, graph);
-    const short = c.hash.slice(0, 7);
-    const isHead = head === c.hash;
-    return {
-      id: c.hash,
-      type: "commit",
-      position: pos.get(c.hash) ?? { x: 0, y: 0 },
-      data: {
-        short,
-        subject: c.subject,
-        author: c.author,
-        initials: initials(c.author),
-        refs: labels,
-        isHead,
-      },
-      width: NODE_W,
-      height: NODE_H,
-    };
-  });
-
-  const edges: Edge[] = [];
-  for (const c of commits) {
-    for (const p of c.parents) {
-      if (!commitSet.has(p)) {
-        continue;
-      }
-      edges.push({
-        id: `${p}-${c.hash}`,
-        source: p,
-        target: c.hash,
-        style: { stroke: "#2563EB", strokeWidth: 2, opacity: 0.88 },
-      });
-    }
-  }
-
-  return { nodes, edges };
 }
 
 const emptyNodeTypes = { emptyRoot: EmptyRootNode };
@@ -234,30 +170,100 @@ function NoRepoPlaceholder() {
   );
 }
 
-function CommitGraphFilled(props: {
+const commitGraphNodeTypes = {
+  commit: CommitNode,
+};
+
+const branchTreeNodeTypes = {
+  branchFolder: BranchFolderNode,
+  branchTreeCard: BranchTreeCardNode,
+};
+
+function FitViewOnDataChange(props: { sig: string }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      fitView({ padding: 0.25, duration: 380 });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [props.sig, fitView]);
+  return null;
+}
+
+function GraphCanvasBody(props: {
   graph: GraphPayload;
+  view: CanvasViewMode;
   selected: string | null;
   onSelect: (hash: string | null) => void;
   onShiftClickCommit?: (hash: string) => void;
+  onBranchMergeRequest?: (p: {
+    from: string;
+    into: string;
+    fromRemote: boolean;
+    intoRemote: boolean;
+  }) => void;
 }) {
-  const initial = useMemo(() => buildFlow(props.graph), [props.graph]);
+  const flow = useMemo(() => {
+    return props.view === "commitGraph"
+      ? buildCommitGraphFlow(props.graph)
+      : buildBranchTreeFlow(props.graph);
+  }, [props.graph, props.view]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(flow.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
 
   useEffect(() => {
-    setNodes(initial.nodes);
-    setEdges(initial.edges);
-  }, [initial, setNodes, setEdges]);
+    setNodes(flow.nodes);
+    setEdges(flow.edges);
+  }, [flow, setNodes, setEdges]);
+
+  const fitSig = `${props.view}|${flow.nodes.length}|${flow.edges.length}`;
 
   useEffect(() => {
     setNodes((nds) =>
-      nds.map((n) => ({ ...n, selected: n.id === props.selected }))
+      nds.map((n) => {
+        if (props.view === "commitGraph") {
+          return { ...n, selected: n.id === props.selected };
+        }
+        const tip =
+          typeof n.data === "object" &&
+          n.data &&
+          "hash" in n.data &&
+          typeof (n.data as { hash?: string }).hash === "string"
+            ? (n.data as { hash: string }).hash
+            : null;
+        const sel = tip && tip === props.selected;
+        return { ...n, selected: Boolean(sel) };
+      })
     );
-  }, [props.selected, setNodes]);
+  }, [props.selected, props.view, setNodes]);
+
+  const getNodeColor = useCallback(
+    (n: Node) => {
+      if (n.type === "branchFolder") {
+        return "#F59E0B";
+      }
+      if (n.type === "branchTreeCard") {
+        return "#22C55E";
+      }
+      return "#2563EB";
+    },
+    []
+  );
 
   const onNodeClick = useCallback(
     (ev: MouseEvent, n: Node) => {
+      if (props.view === "branchTree") {
+        if (n.type === "branchTreeCard" && n.data && typeof n.data === "object") {
+          const h = (n.data as { hash?: string }).hash;
+          if (h) {
+            props.onSelect(h);
+            return;
+          }
+        }
+        props.onSelect(null);
+        return;
+      }
       if (ev.shiftKey && props.onShiftClickCommit) {
         props.onShiftClickCommit(n.id);
         return;
@@ -271,6 +277,131 @@ function CommitGraphFilled(props: {
     props.onSelect(null);
   }, [props]);
 
+  const isValidConnection = useCallback(
+    (edge: Connection) => {
+      if (!edge.source || !edge.target || edge.source === edge.target) {
+        return false;
+      }
+      const s = nodes.find((n) => n.id === edge.source);
+      const t = nodes.find((n) => n.id === edge.target);
+      if (!s || !t || s.type !== "branchTreeCard" || t.type !== "branchTreeCard") {
+        return false;
+      }
+      const sd = s.data as BranchTreeCardData;
+      const td = t.data as BranchTreeCardData;
+      if (!sd.hash?.trim() || !td.hash?.trim()) {
+        return false;
+      }
+      if (td.isRemote) {
+        return false;
+      }
+      return true;
+    },
+    [nodes]
+  );
+
+  const onConnect = useCallback(
+    (c: Connection) => {
+      if (!c.source || !c.target || !props.onBranchMergeRequest) {
+        return;
+      }
+      const s = nodes.find((n) => n.id === c.source);
+      const t = nodes.find((n) => n.id === c.target);
+      if (!s || !t) {
+        return;
+      }
+      const sd = s.data as BranchTreeCardData;
+      const td = t.data as BranchTreeCardData;
+      props.onBranchMergeRequest({
+        from: sd.name,
+        into: td.name,
+        fromRemote: sd.isRemote,
+        intoRemote: td.isRemote,
+      });
+    },
+    [nodes, props.onBranchMergeRequest]
+  );
+
+  const nodeTypes =
+    props.view === "commitGraph" ? commitGraphNodeTypes : branchTreeNodeTypes;
+
+  const branchTreeConnect = props.view === "branchTree" && props.onBranchMergeRequest;
+
+  return (
+    <motion.div
+      key={props.view}
+      className="h-full w-full min-h-[200px]"
+      initial={{ opacity: 0, scale: 0.985 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        onConnect={branchTreeConnect ? onConnect : undefined}
+        isValidConnection={branchTreeConnect ? isValidConnection : undefined}
+        nodeTypes={nodeTypes}
+        fitView
+        minZoom={0.12}
+        maxZoom={1.85}
+        proOptions={{ hideAttribution: true }}
+        defaultEdgeOptions={{ type: "smoothstep" }}
+        nodesDraggable={false}
+        nodesConnectable={Boolean(branchTreeConnect)}
+        connectionRadius={28}
+        connectionLineStyle={{ stroke: "#F97316", strokeWidth: 2 }}
+      >
+        <FitViewOnDataChange sig={fitSig} />
+        {props.view === "branchTree" ? (
+          <Panel
+            position="top-left"
+            className="!m-2 max-w-[min(92vw,320px)] rounded-lg border border-gfs-accent/25 bg-gfs-bg/90 px-3 py-2 text-[11px] text-gfs-muted shadow-lg backdrop-blur-sm"
+          >
+            <span className="font-semibold text-gfs-text">Drag to merge</span>
+            <span className="text-gfs-muted">
+              {" "}
+              — pull from the <span className="text-gfs-accent">right handle</span> of
+              one branch to the <span className="text-gfs-accent">left handle</span> of
+              another. The target must be a local branch (solid card).
+            </span>
+          </Panel>
+        ) : null}
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1}
+          color="#334155"
+        />
+        <Controls showInteractive={false} />
+        <MiniMap
+          nodeStrokeWidth={3}
+          zoomable
+          pannable
+          maskColor="rgba(15, 23, 42, 0.85)"
+          nodeColor={getNodeColor}
+        />
+      </ReactFlow>
+    </motion.div>
+  );
+}
+
+function CommitGraphFilled(props: {
+  graph: GraphPayload;
+  view: CanvasViewMode;
+  selected: string | null;
+  onSelect: (hash: string | null) => void;
+  onShiftClickCommit?: (hash: string) => void;
+  onBranchMergeRequest?: (p: {
+    from: string;
+    into: string;
+    fromRemote: boolean;
+    intoRemote: boolean;
+  }) => void;
+}) {
   if (props.graph.commits.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -285,46 +416,21 @@ function CommitGraphFilled(props: {
     );
   }
 
-  return (
-    <div className="h-full w-full min-h-[200px]">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        nodeTypes={{ commit: CommitNode }}
-        fitView
-        minZoom={0.15}
-        maxZoom={1.85}
-        proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "smoothstep" }}
-      >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          color="#334155"
-        />
-        <Controls showInteractive={false} />
-        <MiniMap
-          nodeStrokeWidth={3}
-          zoomable
-          pannable
-          maskColor="rgba(15, 23, 42, 0.85)"
-          nodeColor={() => "#2563EB"}
-        />
-      </ReactFlow>
-    </div>
-  );
+  return <GraphCanvasBody {...props} />;
 }
 
 export function CommitGraph(props: {
   graph: GraphPayload | null;
+  view: CanvasViewMode;
   selected: string | null;
   onSelect: (hash: string | null) => void;
   onShiftClickCommit?: (hash: string) => void;
+  onBranchMergeRequest?: (p: {
+    from: string;
+    into: string;
+    fromRemote: boolean;
+    intoRemote: boolean;
+  }) => void;
 }) {
   if (!props.graph) {
     return <NoRepoPlaceholder />;

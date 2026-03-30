@@ -1,8 +1,175 @@
 import dagre from "dagre";
-import type { CommitRecord } from "../types";
+import type { CommitRecord, RefRecord } from "../types";
 
-const W = 200;
-const H = 76;
+export const BRANCH_W = 220;
+export const BRANCH_H = 72;
+export const COMMIT_W = 200;
+export const COMMIT_H = 76;
+
+interface BranchWithCommits {
+  branch: RefRecord;
+  commits: CommitRecord[];
+  isCurrentBranch: boolean;
+}
+
+function findAncestors(
+  commits: CommitRecord[],
+  commitHash: string
+): Set<string> {
+  const ancestors = new Set<string>();
+  const queue = [commitHash];
+  const commitMap = new Map(commits.map((c) => [c.hash, c]));
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (ancestors.has(current)) continue;
+    ancestors.add(current);
+
+    const commit = commitMap.get(current);
+    if (commit) {
+      for (const parent of commit.parents) {
+        if (!ancestors.has(parent)) {
+          queue.push(parent);
+        }
+      }
+    }
+  }
+
+  return ancestors;
+}
+
+export function assignCommitsToBranches(
+  commits: CommitRecord[],
+  refs: RefRecord[],
+  currentBranch: string | null
+): BranchWithCommits[] {
+  const commitMap = new Map(commits.map((c) => [c.hash, c]));
+
+  const allBranchRefs = refs.filter((r) => r.fullName.startsWith("refs/heads/"));
+
+  if (allBranchRefs.length === 0) {
+    return [];
+  }
+
+  const branchTips = allBranchRefs
+    .filter((ref) => commitMap.has(ref.hash))
+    .map((ref) => ({ branch: ref, hash: ref.hash }));
+
+  const branchCommits = new Map<string, CommitRecord[]>();
+  for (const ref of allBranchRefs) {
+    branchCommits.set(ref.hash, []);
+  }
+
+  if (branchTips.length > 0) {
+    const allAncestors = branchTips.map((bt) => findAncestors(commits, bt.hash));
+
+    for (const commit of commits) {
+      const containingBranches: string[] = [];
+      for (let i = 0; i < branchTips.length; i++) {
+        if (allAncestors[i].has(commit.hash)) {
+          containingBranches.push(branchTips[i].hash);
+        }
+      }
+
+      if (containingBranches.length === 1) {
+        branchCommits.get(containingBranches[0])!.push(commit);
+      }
+    }
+  }
+
+  const result: BranchWithCommits[] = [];
+  for (const ref of allBranchRefs) {
+    const commitsList = branchCommits.get(ref.hash) || [];
+    commitsList.sort((a, b) => b.date - a.date);
+    result.push({
+      branch: ref,
+      commits: commitsList,
+      isCurrentBranch: ref.name === currentBranch,
+    });
+  }
+
+  return result;
+}
+
+export interface GraphLayout {
+  branchPositions: Map<string, { x: number; y: number }>;
+  commitPositions: Map<string, { x: number; y: number }>;
+  branchCommitCounts: Map<string, number>;
+}
+
+export function layoutBranchGraph(
+  branchData: BranchWithCommits[],
+  commits: CommitRecord[]
+): GraphLayout {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+
+  g.setGraph({
+    rankdir: "TB",
+    nodesep: 60,
+    ranksep: 120,
+    marginx: 40,
+    marginy: 40,
+  });
+
+  for (const bd of branchData) {
+    g.setNode(`branch:${bd.branch.name}`, {
+      width: BRANCH_W,
+      height: BRANCH_H,
+    });
+  }
+
+  for (const c of commits) {
+    g.setNode(`commit:${c.hash}`, { width: COMMIT_W, height: COMMIT_H });
+  }
+
+  for (const bd of branchData) {
+    const commitMap = new Map(commits.map((c) => [c.hash, c]));
+    if (commitMap.has(bd.branch.hash)) {
+      g.setEdge(`branch:${bd.branch.name}`, `commit:${bd.branch.hash}`);
+    } else if (commits.length > 0) {
+      g.setEdge(`branch:${bd.branch.name}`, `commit:${commits[0].hash}`);
+    }
+  }
+
+  for (const c of commits) {
+    for (const p of c.parents) {
+      if (commits.some((cc) => cc.hash === p)) {
+        g.setEdge(`commit:${p}`, `commit:${c.hash}`);
+      }
+    }
+  }
+
+  dagre.layout(g);
+
+  const branchPositions = new Map<string, { x: number; y: number }>();
+  const commitPositions = new Map<string, { x: number; y: number }>();
+  const branchCommitCounts = new Map<string, number>();
+
+  for (const bd of branchData) {
+    const n = g.node(`branch:${bd.branch.name}`);
+    if (n) {
+      branchPositions.set(bd.branch.name, {
+        x: n.x - BRANCH_W / 2,
+        y: n.y - BRANCH_H / 2,
+      });
+      branchCommitCounts.set(bd.branch.name, bd.commits.length);
+    }
+
+    for (let i = 0; i < bd.commits.length; i++) {
+      const c = bd.commits[i];
+      const n = g.node(`commit:${c.hash}`);
+      if (n) {
+        commitPositions.set(c.hash, {
+          x: n.x - COMMIT_W / 2,
+          y: n.y - COMMIT_H / 2,
+        });
+      }
+    }
+  }
+
+  return { branchPositions, commitPositions, branchCommitCounts };
+}
 
 export function layoutCommitPositions(
   commits: CommitRecord[]
@@ -19,7 +186,7 @@ export function layoutCommitPositions(
 
   const set = new Set(commits.map((c) => c.hash));
   for (const c of commits) {
-    g.setNode(c.hash, { width: W, height: H });
+    g.setNode(c.hash, { width: COMMIT_W, height: COMMIT_H });
   }
   for (const c of commits) {
     for (const p of c.parents) {
@@ -34,11 +201,11 @@ export function layoutCommitPositions(
   for (const c of commits) {
     const n = g.node(c.hash);
     if (n) {
-      map.set(c.hash, { x: n.x - W / 2, y: n.y - H / 2 });
+      map.set(c.hash, { x: n.x - COMMIT_W / 2, y: n.y - COMMIT_H / 2 });
     }
   }
   return map;
 }
 
-export const NODE_W = W;
-export const NODE_H = H;
+export const NODE_W = COMMIT_W;
+export const NODE_H = COMMIT_H;

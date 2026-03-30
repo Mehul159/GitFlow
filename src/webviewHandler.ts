@@ -32,6 +32,18 @@ function truncateDoc(body: string): string {
   return `${body.slice(0, DOC_LIMIT)}\n\n… truncated (${body.length} chars total)`;
 }
 
+async function localBranchExists(
+  root: string,
+  branch: string
+): Promise<boolean> {
+  try {
+    await execGit(root, ["show-ref", "--verify", `refs/heads/${branch}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function pushFullSync(ctx: WebviewHandlerContext): Promise<void> {
   const root = ctx.getGitRoot();
   const max = ctx.maxCommits();
@@ -514,6 +526,89 @@ export async function handleWebviewMessage(
           toast(ctx.webview, "info", "Merge complete.");
         }
         await pushFullSync(ctx);
+        break;
+      }
+
+      case "mergeBranches": {
+        const r = needRoot();
+        if (!r) {
+          return;
+        }
+        const into = msg.into.trim();
+        const from = msg.from.trim();
+        if (!into || !from || into === from) {
+          toast(ctx.webview, "error", "Invalid merge.");
+          ctx.webview.postMessage({
+            type: "mergeResult",
+            status: "error",
+            message: "Invalid branch selection.",
+          } satisfies HostToWebview);
+          return;
+        }
+        const intoOk = await localBranchExists(r, into);
+        if (!intoOk) {
+          const err = `Cannot merge into "${into}": that local branch does not exist. Check out or create it first.`;
+          toast(ctx.webview, "error", err);
+          ctx.webview.postMessage({
+            type: "mergeResult",
+            status: "error",
+            message: err,
+          } satisfies HostToWebview);
+          return;
+        }
+        try {
+          const cur = (await execGit(r, ["branch", "--show-current"])).trim();
+          if (cur !== into) {
+            await execGit(r, ["checkout", into]);
+          }
+          if (msg.squash) {
+            await execGit(r, ["merge", "--squash", from]);
+            toast(
+              ctx.webview,
+              "info",
+              `Merged ${from} into ${into} (squash). Review and commit from the Commit panel.`
+            );
+          } else if (msg.noFf) {
+            await execGit(r, ["merge", "--no-ff", from]);
+            toast(ctx.webview, "info", `Merged ${from} into ${into}.`);
+          } else {
+            await execGit(r, ["merge", from]);
+            toast(ctx.webview, "info", `Merged ${from} into ${into}.`);
+          }
+          await pushFullSync(ctx);
+          ctx.webview.postMessage({
+            type: "mergeResult",
+            status: "ok",
+          } satisfies HostToWebview);
+        } catch (e: unknown) {
+          const text =
+            e instanceof GitError
+              ? e.message
+              : e instanceof Error
+                ? e.message
+                : String(e);
+          await pushFullSync(ctx);
+          const ex = await loadRepoExtras(r);
+          const conflict =
+            ex.mergeState.merging && ex.mergeState.conflictFiles.length > 0;
+          ctx.webview.postMessage({
+            type: "mergeResult",
+            status: conflict ? "conflict" : "error",
+            message: text,
+            conflictFiles: conflict
+              ? ex.mergeState.conflictFiles
+              : undefined,
+          } satisfies HostToWebview);
+          if (conflict) {
+            toast(
+              ctx.webview,
+              "error",
+              "Merge paused: resolve conflicts, then commit or abort."
+            );
+          } else {
+            toast(ctx.webview, "error", text);
+          }
+        }
         break;
       }
 
