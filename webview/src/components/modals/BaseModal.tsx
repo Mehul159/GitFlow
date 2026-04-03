@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 
 interface BaseModalProps {
   isOpen: boolean;
@@ -9,6 +9,42 @@ interface BaseModalProps {
 }
 
 export function BaseModal({ isOpen, onClose, title, children, size = "md" }: BaseModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = dialogRef.current;
+    if (el) {
+      const first = el.querySelector<HTMLElement>("button, input, textarea, select, [tabindex]");
+      first?.focus();
+    }
+  }, [isOpen]);
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          "button, input, textarea, select, [tabindex]:not([tabindex='-1'])"
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [onClose]
+  );
+
   if (!isOpen) return null;
 
   const sizeClasses = {
@@ -18,10 +54,19 @@ export function BaseModal({ isOpen, onClose, title, children, size = "md" }: Bas
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="base-modal-title"
+      onKeyDown={onKeyDown}
+    >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative z-10 w-full ${sizeClasses[size]} rounded-xl border border-orange-500/30 bg-neutral-900 p-6 shadow-2xl`}>
-        <h3 className="mb-4 text-lg font-semibold text-white">{title}</h3>
+      <div
+        ref={dialogRef}
+        className={`relative z-10 w-full ${sizeClasses[size]} rounded-xl border border-orange-500/30 bg-neutral-900 p-6 shadow-2xl`}
+      >
+        <h3 id="base-modal-title" className="mb-4 text-lg font-semibold text-white">{title}</h3>
         {children}
       </div>
     </div>

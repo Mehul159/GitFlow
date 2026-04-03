@@ -41,18 +41,15 @@ async function geminiSuggest(apiKey: string, diff: string): Promise<string> {
     },
   });
 
-  const path =
-    "/v1beta/models/gemini-2.0-flash:generateContent?key=" +
-    encodeURIComponent(apiKey);
-
   const raw = await httpsRequest(
     {
       hostname: "generativelanguage.googleapis.com",
-      path,
+      path: "/v1beta/models/gemini-2.0-flash:generateContent",
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
+        "x-goog-api-key": apiKey,
       },
     },
     body
@@ -112,12 +109,14 @@ async function groqSuggest(apiKey: string, diff: string): Promise<string> {
   return text.split("\n")[0].replace(/^["']|["']$/g, "").trim();
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 function httpsRequest(
   opts: https.RequestOptions,
   body: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const req = https.request(opts, (res) => {
+    const req = https.request({ ...opts, timeout: REQUEST_TIMEOUT_MS }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c as Buffer));
       res.on("end", () => {
@@ -128,6 +127,10 @@ function httpsRequest(
           resolve(txt);
         }
       });
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("Request timed out after 30s"));
     });
     req.on("error", reject);
     req.write(body);

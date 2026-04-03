@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
 
 import type {
@@ -13,11 +13,14 @@ import { CommitGraph } from "./components/CommitGraph";
 import { CommitComposer, DetailPanel } from "./components/DetailPanel";
 import { Toolbar } from "./components/Toolbar";
 import { CommandPalette } from "./components/CommandPalette";
+import type { CanvasViewMode } from "./lib/canvasGraph";
 import { StashPanel } from "./components/StashPanel";
 import { RemotesPanel } from "./components/RemotesPanel";
 import { TagsPanel } from "./components/TagsPanel";
 import { ToolsPanel } from "./components/ToolsPanel";
 import { TextDocModal } from "./components/TextDocModal";
+import { BranchMergeConnectModal } from "./components/modals/BranchMergeConnectModal";
+import { MergeBranchOutcomeModal } from "./components/modals/MergeBranchOutcomeModal";
 import AnimatedTabs from "@/components/ui/animated-tabs";
 import Badge from "@/components/ui/badge";
 
@@ -34,6 +37,7 @@ const emptyMerge = {
 export default function App() {
   const api = useMemo(() => getVsCodeApi(), []);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
   const [graphErr, setGraphErr] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [statusErr, setStatusErr] = useState<string | null>(null);
@@ -51,17 +55,39 @@ export default function App() {
   } | null>(null);
   const [diffAnchor, setDiffAnchor] = useState<string | null>(null);
   const [pushNoUpstream, setPushNoUpstream] = useState<{ branch: string; remote: string } | null>(null);
+  const [canvasView, setCanvasView] = useState<CanvasViewMode>("commitGraph");
+  const [branchMergeDraft, setBranchMergeDraft] = useState<{
+    from: string;
+    into: string;
+    fromRemote: boolean;
+    intoRemote: boolean;
+  } | null>(null);
+  const [mergeOutcome, setMergeOutcome] = useState<{
+    status: "conflict" | "error";
+    message?: string;
+    conflictFiles?: string[];
+  } | null>(null);
 
   const hasRepo = graph !== null && graphErr === null;
   const mergeState = extras?.mergeState ?? emptyMerge;
   const aheadBehind = extras?.aheadBehind ?? null;
 
+  const toastTimers = useRef<Map<number, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      for (const t of toastTimers.current.values()) window.clearTimeout(t);
+    };
+  }, []);
+
   const pushToast = useCallback((level: Toast["level"], message: string) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, level, message }]);
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      toastTimers.current.delete(id);
       setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
+    toastTimers.current.set(id, timer);
   }, []);
 
   useEffect(() => {
@@ -72,6 +98,7 @@ export default function App() {
       }
       switch (d.type) {
         case "graph":
+          setGraphLoading(false);
           setGraphErr(typeof d.error === "string" ? d.error : null);
           setGraph(d.payload as GraphPayload | null);
           break;
@@ -115,6 +142,26 @@ export default function App() {
             setPushNoUpstream({ branch: d.branch, remote: d.remote });
           }
           break;
+        case "mergeResult": {
+          const st = (d as { status?: unknown }).status;
+          if (st === "ok") {
+            break;
+          }
+          if (st === "conflict" || st === "error") {
+            const payload = d as {
+              message?: unknown;
+              conflictFiles?: unknown;
+            };
+            setMergeOutcome({
+              status: st,
+              message: typeof payload.message === "string" ? payload.message : undefined,
+              conflictFiles: Array.isArray(payload.conflictFiles)
+                ? (payload.conflictFiles as string[])
+                : undefined,
+            });
+          }
+          break;
+        }
         default:
           break;
       }
@@ -188,6 +235,18 @@ export default function App() {
       api?.postMessage({ type: "checkoutRemote", name });
     },
     [api]
+  );
+
+  const onBranchMergeRequest = useCallback(
+    (p: {
+      from: string;
+      into: string;
+      fromRemote: boolean;
+      intoRemote: boolean;
+    }) => {
+      setBranchMergeDraft(p);
+    },
+    []
   );
 
   const onShiftCommit = useCallback(
@@ -285,6 +344,7 @@ export default function App() {
             hasRepo={hasRepo}
             rows={extras?.stash ?? []}
             api={api}
+            error={extrasErr}
           />
         </div>
       ),
@@ -298,6 +358,7 @@ export default function App() {
             hasRepo={hasRepo}
             remotes={extras?.remotes ?? []}
             api={api}
+            error={extrasErr}
           />
         </div>
       ),
@@ -312,6 +373,7 @@ export default function App() {
             tags={extras?.tags ?? []}
             api={api}
             headHash={graph?.head ?? null}
+            error={extrasErr}
           />
         </div>
       ),
@@ -347,7 +409,9 @@ export default function App() {
               GitFlow Studio
             </div>
             <div className="mt-0.5 text-[10px] text-gfs-muted flex items-center gap-1">
-              <kbd className="rounded bg-gfs-surface2 px-1.5 py-0.5 text-[9px] font-mono">⌘K</kbd>
+              <kbd className="rounded bg-gfs-surface2 px-1.5 py-0.5 text-[9px] font-mono">
+                {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}K
+              </kbd>
               <span className="text-gfs-muted/60">palette</span>
             </div>
           </div>
@@ -396,6 +460,8 @@ export default function App() {
             aheadBehind={aheadBehind}
             pushNoUpstream={pushNoUpstream}
             setPushNoUpstream={setPushNoUpstream}
+            canvasView={canvasView}
+            onCanvasViewChange={setCanvasView}
           />
           <div className="min-h-0 flex-1">
             {graphErr ? (
@@ -420,9 +486,15 @@ export default function App() {
               <ReactFlowProvider>
                 <CommitGraph
                   graph={graph}
+                  loading={graphLoading}
+                  view={canvasView}
                   selected={selectedCommit}
                   onSelect={setSelectedCommit}
                   onShiftClickCommit={hasRepo ? onShiftCommit : undefined}
+                  onBranchMergeRequest={
+                    hasRepo && api ? onBranchMergeRequest : undefined
+                  }
+                  api={hasRepo ? api : null}
                 />
               </ReactFlowProvider>
             )}
@@ -437,6 +509,15 @@ export default function App() {
                 {graph?.commits.length ?? 0} commits
                 {diffAnchor ? ` · compare ${diffAnchor.slice(0, 7)}` : ""}
               </span>
+              {graph && graph.commits.length >= 100 ? (
+                <button
+                  type="button"
+                  className="rounded bg-gfs-surface2 px-2 py-0.5 text-[10px] text-gfs-accent hover:bg-gfs-surface2/80"
+                  onClick={() => api?.postMessage({ type: "loadMore" })}
+                >
+                  Load more…
+                </button>
+              ) : null}
             </div>
             <span className="shrink-0 text-gfs-muted/60 text-[10px]">GitFlow Studio</span>
           </footer>
@@ -444,10 +525,43 @@ export default function App() {
             graph={graph}
             hash={selectedCommit}
             onClose={() => setSelectedCommit(null)}
+            onSelectCommit={setSelectedCommit}
             api={api}
           />
         </main>
       </div>
+
+      <BranchMergeConnectModal
+        isOpen={branchMergeDraft !== null}
+        from={branchMergeDraft?.from ?? ""}
+        into={branchMergeDraft?.into ?? ""}
+        fromRemote={branchMergeDraft?.fromRemote ?? false}
+        intoRemote={branchMergeDraft?.intoRemote ?? false}
+        workingTreeDirty={Boolean(status && !status.clean)}
+        onClose={() => setBranchMergeDraft(null)}
+        onConfirm={(squash, noFf) => {
+          if (!branchMergeDraft || !api) {
+            return;
+          }
+          api.postMessage({
+            type: "mergeBranches",
+            into: branchMergeDraft.into,
+            from: branchMergeDraft.from,
+            squash,
+            noFf,
+          });
+          setBranchMergeDraft(null);
+        }}
+      />
+
+      <MergeBranchOutcomeModal
+        isOpen={mergeOutcome !== null}
+        status={mergeOutcome?.status ?? "error"}
+        message={mergeOutcome?.message}
+        conflictFiles={mergeOutcome?.conflictFiles}
+        api={api}
+        onClose={() => setMergeOutcome(null)}
+      />
 
       <CommandPalette
         open={paletteOpen}

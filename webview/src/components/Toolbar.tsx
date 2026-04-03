@@ -1,4 +1,5 @@
 import type { AheadBehind, MergeState } from "../types";
+import type { CanvasViewMode } from "../lib/canvasGraph";
 import { ConfirmModal, BranchModal, MergeModal, RebaseModal, PushUpstreamModal } from "./modals";
 import { useState } from "react";
 
@@ -18,19 +19,14 @@ export function Toolbar(props: {
   aheadBehind: AheadBehind | null;
   pushNoUpstream: PushNoUpstream | null;
   setPushNoUpstream: (value: PushNoUpstream | null) => void;
+  canvasView: CanvasViewMode;
+  onCanvasViewChange: (v: CanvasViewMode) => void;
 }) {
   const [branchModal, setBranchModal] = useState<BranchModalState>({ isOpen: false });
   const [pullConfirm, setPullConfirm] = useState(false);
   const [mergeModalOpen, setMergeModalOpen] = useState(false);
   const [rebaseModal, setRebaseModal] = useState(false);
   const [forcePushModal, setForcePushModal] = useState(false);
-
-  console.log("[GFS] Toolbar rendered, hasRepo:", props.hasRepo, "api:", props.api ? "set" : "null");
-  
-  if (!props.api) {
-    console.log("[GFS] No API - toolbar hidden");
-    return null;
-  }
 
   const ms = props.mergeState;
   const conflict =
@@ -134,15 +130,67 @@ export function Toolbar(props: {
                   Abort cherry-pick
                 </button>
               ) : null}
+              {ms?.revert ? (
+                <button
+                  type="button"
+                  className="rounded bg-gfs-surface2 px-2 py-0.5 text-[10px]"
+                  onClick={() =>
+                    props.api?.postMessage({ type: "revertAbort" })
+                  }
+                >
+                  Abort revert
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
         
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-gfs-surface/30">
-          {/* Branch + Button */}
+          <div
+            className="mr-1 flex shrink-0 rounded-lg bg-gfs-bg/80 p-0.5 ring-1 ring-gfs-surface2"
+            role="group"
+            aria-label="Canvas view"
+          >
+            <button
+              type="button"
+              title="Commit graph: commits and parent links"
+              className={[
+                "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                props.canvasView === "commitGraph"
+                  ? "bg-gfs-accent text-white shadow-sm"
+                  : "text-gfs-muted hover:text-gfs-text",
+              ].join(" ")}
+              onClick={() => props.onCanvasViewChange("commitGraph")}
+            >
+              Commit graph
+            </button>
+            <button
+              type="button"
+              title="Branch tree: folders, health, stale branches"
+              className={[
+                "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                props.canvasView === "branchTree"
+                  ? "bg-gfs-accent text-white shadow-sm"
+                  : "text-gfs-muted hover:text-gfs-text",
+              ].join(" ")}
+              onClick={() => props.onCanvasViewChange("branchTree")}
+            >
+              Branch tree
+            </button>
+          </div>
+
+          <span className="mx-0.5 h-5 w-px bg-gfs-surface2" />
+
+          {!props.api ? (
+            <span className="text-[11px] text-gfs-muted">Git actions require the extension host.</span>
+          ) : null}
+
+          {props.api ? (
+            <>
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-white shadow-lg shadow-orange-500/20 hover:bg-orange-600 hover:scale-105 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-white shadow-lg shadow-orange-500/20 hover:bg-orange-600 hover:scale-105 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             title="Create new branch"
             onClick={() => setBranchModal({ isOpen: true })}
           >
@@ -153,7 +201,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02]"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02] disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => props.api?.postMessage({ type: "fetch" })}
           >
             Fetch
@@ -161,7 +210,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02]"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02] disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setPullConfirm(true)}
           >
             Pull
@@ -169,7 +219,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gradient-to-r from-ignite/80 to-ignite px-3 py-1.5 text-[12px] font-semibold text-chalk shadow-lg shadow-ignite/20 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gradient-to-r from-ignite/80 to-ignite px-3 py-1.5 text-[12px] font-semibold text-chalk shadow-lg shadow-ignite/20 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => props.api?.postMessage({ type: "push" })}
           >
             Push
@@ -177,7 +228,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-red-500/20 px-3 py-1.5 text-[12px] font-semibold text-red-400 ring-1 ring-red-500/30 hover:bg-red-500/30 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-red-500/20 px-3 py-1.5 text-[12px] font-semibold text-red-400 ring-1 ring-red-500/30 hover:bg-red-500/30 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setForcePushModal(true)}
           >
             Force Push
@@ -187,7 +239,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setMergeModalOpen(true)}
           >
             Merge
@@ -195,7 +248,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setRebaseModal(true)}
           >
             Rebase
@@ -203,7 +257,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setBranchModal({ isOpen: true })}
           >
             Branch
@@ -217,6 +272,8 @@ export function Toolbar(props: {
           ) : (
             <span className="ml-auto text-[10px] text-gfs-muted">no upstream</span>
           )}
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -224,33 +281,34 @@ export function Toolbar(props: {
       <BranchModal
         isOpen={branchModal.isOpen}
         onConfirm={handleBranchCreate}
-        onCancel={() => setBranchModal({ isOpen: false })}
+        onClose={() => setBranchModal({ isOpen: false })}
       />
 
       {/* Pull Confirm Modal */}
       <ConfirmModal
         isOpen={pullConfirm}
         title="Pull Options"
-        message="Do you want to pull with rebase?"
+        message="Do you want to pull with rebase, or a normal merge pull?"
         confirmLabel="Pull with Rebase"
         cancelLabel="Pull (merge)"
-        confirmVariant="warning"
+        variant="warning"
         onConfirm={() => handlePull(true)}
         onCancel={() => handlePull(false)}
+        onClose={() => setPullConfirm(false)}
       />
 
       {/* Merge Modal */}
       <MergeModal
         isOpen={mergeModalOpen}
         onConfirm={handleMerge}
-        onCancel={() => setMergeModalOpen(false)}
+        onClose={() => setMergeModalOpen(false)}
       />
 
       {/* Rebase Modal */}
       <RebaseModal
         isOpen={rebaseModal}
         onConfirm={handleRebase}
-        onCancel={() => setRebaseModal(false)}
+        onClose={() => setRebaseModal(false)}
       />
 
       {/* Force Push Confirm */}
@@ -259,9 +317,9 @@ export function Toolbar(props: {
         title="Force Push"
         message="Force push is dangerous and can overwrite remote history. Are you sure?"
         confirmLabel="Force Push"
-        confirmVariant="danger"
+        variant="danger"
         onConfirm={handleForcePush}
-        onCancel={() => setForcePushModal(false)}
+        onClose={() => setForcePushModal(false)}
       />
 
       {/* Push Upstream Modal */}

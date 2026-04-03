@@ -1,22 +1,58 @@
+import { useEffect, useRef } from "react";
+
 export function TextDocModal(props: {
   title: string;
   body: string;
   language?: string;
   onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      props.onClose();
+    }
+    if (e.key === "Tab") {
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="gfs-doc-title"
+      aria-describedby="gfs-doc-body"
+      onKeyDown={onKeyDown}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
           props.onClose();
         }
       }}
     >
-      <div className="flex max-h-[min(88vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-gfs border border-gfs-surface2 bg-gfs-surface shadow-2xl">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="flex max-h-[min(88vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-gfs border border-gfs-surface2 bg-gfs-surface shadow-2xl outline-none"
+      >
         <div className="flex items-center justify-between border-b border-gfs-surface2 px-4 py-3">
           <h2 id="gfs-doc-title" className="truncate text-sm font-semibold text-gfs-text">
             {props.title}
@@ -29,7 +65,10 @@ export function TextDocModal(props: {
             Close
           </button>
         </div>
-        <pre className="gfs-scroll flex-1 overflow-auto p-4 font-mono text-[11px] leading-relaxed text-gfs-text">
+        <pre
+          id="gfs-doc-body"
+          className="gfs-scroll flex-1 overflow-auto p-4 font-mono text-[11px] leading-relaxed text-gfs-text"
+        >
           {props.body}
         </pre>
       </div>

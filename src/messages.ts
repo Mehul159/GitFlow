@@ -40,11 +40,19 @@ export type WebviewToHost =
       force?: boolean;
     }
   | { type: "merge"; branch: string; squash?: boolean; noFf?: boolean }
+  | {
+      type: "mergeBranches";
+      into: string;
+      from: string;
+      squash?: boolean;
+      noFf?: boolean;
+    }
   | { type: "mergeAbort" }
   | { type: "rebase"; onto: string }
   | { type: "rebaseAbort" }
   | { type: "cherryPick"; hash: string }
   | { type: "cherryPickAbort" }
+  | { type: "revertAbort" }
   | { type: "reset"; mode: "soft" | "mixed" | "hard"; ref: string }
   | { type: "stashPush"; message?: string }
   | { type: "stashPop"; index: number }
@@ -78,7 +86,8 @@ export type WebviewToHost =
   | { type: "getBlame"; path: string }
   | { type: "getShortlog" }
   | { type: "openInEditor"; path: string }
-  | { type: "openExternalUrl"; url: string };
+  | { type: "openExternalUrl"; url: string }
+  | { type: "loadMore" };
 
 export type HostToWebview =
   | { type: "graph"; payload: unknown; error?: string }
@@ -103,4 +112,10 @@ export type HostToWebview =
       type: "pushNoUpstream";
       branch: string;
       remote: string;
+    }
+  | {
+      type: "mergeResult";
+      status: "ok" | "conflict" | "error";
+      message?: string;
+      conflictFiles?: string[];
     };

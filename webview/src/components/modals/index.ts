@@ -2,7 +2,7 @@ export { BaseModal, ModalButton, ModalInput, ModalCheckbox, ModalActions } from 
 export { BranchModal } from "./BranchModal";
 export { ConfirmModal } from "./ConfirmModal";
 export { MergeModal } from "./MergeModal";
-export { PullModal } from "./PullModal";
+
 export { RebaseModal } from "./RebaseModal";
 export { StashModal } from "./StashModal";
 export { TagModal } from "./TagModal";

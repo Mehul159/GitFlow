@@ -5,6 +5,7 @@ export function TagsPanel(props: {
   tags: TagRow[];
   api: { postMessage: (m: unknown) => void } | null;
   headHash: string | null;
+  error?: string | null;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 px-2 pb-3">
@@ -39,7 +40,9 @@ export function TagsPanel(props: {
         Push tags
       </button>
       <div className="gfs-scroll min-h-0 flex-1 space-y-1 overflow-y-auto">
-        {props.tags.length === 0 ? (
+        {props.error ? (
+          <p className="py-6 text-center text-xs text-gfs-danger">Failed to load tags</p>
+        ) : props.tags.length === 0 ? (
           <p className="py-6 text-center text-xs text-gfs-muted">No tags</p>
         ) : (
           props.tags.map((t) => (

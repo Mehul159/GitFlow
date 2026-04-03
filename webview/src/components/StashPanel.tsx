@@ -4,6 +4,7 @@ export function StashPanel(props: {
   hasRepo: boolean;
   rows: StashRow[];
   api: { postMessage: (m: unknown) => void } | null;
+  error?: string | null;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -35,7 +36,9 @@ export function StashPanel(props: {
         </button>
       </div>
       <div className="gfs-scroll min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-3">
-        {props.rows.length === 0 ? (
+        {props.error ? (
+          <p className="px-2 py-6 text-center text-xs text-gfs-danger">Failed to load stashes</p>
+        ) : props.rows.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-gfs-muted">No stashes</p>
         ) : (
           props.rows.map((s) => (
