@@ -52,6 +52,7 @@ export type WebviewToHost =
   | { type: "rebaseAbort" }
   | { type: "cherryPick"; hash: string }
   | { type: "cherryPickAbort" }
+  | { type: "revertAbort" }
   | { type: "reset"; mode: "soft" | "mixed" | "hard"; ref: string }
   | { type: "stashPush"; message?: string }
   | { type: "stashPop"; index: number }
@@ -85,7 +86,8 @@ export type WebviewToHost =
   | { type: "getBlame"; path: string }
   | { type: "getShortlog" }
   | { type: "openInEditor"; path: string }
-  | { type: "openExternalUrl"; url: string };
+  | { type: "openExternalUrl"; url: string }
+  | { type: "loadMore" };
 
 export type HostToWebview =
   | { type: "graph"; payload: unknown; error?: string }

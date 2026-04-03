@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CommitRecord, GraphPayload } from "../types";
 
 function formatTime(epoch: number): string {
@@ -16,6 +16,7 @@ export function DetailPanel(props: {
   graph: GraphPayload | null;
   hash: string | null;
   onClose: () => void;
+  onSelectCommit?: (hash: string) => void;
   api: { postMessage: (m: unknown) => void } | null;
 }) {
   const commit: CommitRecord | null =
@@ -24,9 +25,11 @@ export function DetailPanel(props: {
       : null;
 
   const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     setCopied(false);
+    return () => { clearTimeout(copyTimer.current); };
   }, [props.hash]);
 
   if (!commit) {
@@ -36,10 +39,14 @@ export function DetailPanel(props: {
   const short = commit.hash.slice(0, 7);
 
   const copySha = () => {
-    void navigator.clipboard.writeText(commit.hash).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
+    void navigator.clipboard.writeText(commit.hash).then(
+      () => {
+        setCopied(true);
+        clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => setCopied(false), 2000);
+      },
+      () => { /* clipboard not available */ }
+    );
   };
 
   const resetModes = ["soft", "mixed", "hard"] as const;
@@ -199,8 +206,15 @@ export function DetailPanel(props: {
               <li>root</li>
             ) : (
               commit.parents.map((p) => (
-                <li key={p} className="truncate text-gfs-accent">
-                  {p.slice(0, 7)}
+                <li key={p}>
+                  <button
+                    type="button"
+                    className="truncate text-gfs-accent hover:underline"
+                    onClick={() => props.onSelectCommit?.(p)}
+                    title={`Jump to ${p.slice(0, 7)}`}
+                  >
+                    {p.slice(0, 7)}
+                  </button>
                 </li>
               ))
             )}

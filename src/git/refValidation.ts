@@ -25,13 +25,6 @@ export function isSafeGitObjectId(hash: string): boolean {
   return /^[0-9a-f]{7,64}$/i.test(t);
 }
 
-export function assertSafeRef(name: string, _label: string): string | null {
-  if (!isSafeGitRefName(name)) {
-    return null;
-  }
-  return name.trim();
-}
-
 /** Remote name (origin, upstream) — no flag-like values. */
 export function isSafeRemoteName(name: string): boolean {
   const t = name.trim();

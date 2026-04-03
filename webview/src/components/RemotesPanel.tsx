@@ -4,6 +4,7 @@ export function RemotesPanel(props: {
   hasRepo: boolean;
   remotes: RemoteRow[];
   api: { postMessage: (m: unknown) => void } | null;
+  error?: string | null;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 px-2 pb-3">
@@ -27,7 +28,9 @@ export function RemotesPanel(props: {
         Add remote
       </button>
       <div className="gfs-scroll min-h-0 flex-1 space-y-2 overflow-y-auto">
-        {props.remotes.length === 0 ? (
+        {props.error ? (
+          <p className="py-6 text-center text-xs text-gfs-danger">Failed to load remotes</p>
+        ) : props.remotes.length === 0 ? (
           <p className="py-6 text-center text-xs text-gfs-muted">No remotes</p>
         ) : (
           props.remotes.map((r) => (

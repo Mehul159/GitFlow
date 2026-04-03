@@ -4,12 +4,32 @@
   "description": "Visual, AI-ready Git graph and workflows — Figma-like canvas inside VS Code.",
   "version": "0.1.0",
   "publisher": "gitflow-studio",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitflow-studio/gitflow-studio"
+  },
+  "homepage": "https://github.com/gitflow-studio/gitflow-studio#readme",
+  "bugs": {
+    "url": "https://github.com/gitflow-studio/gitflow-studio/issues"
+  },
+  "keywords": [
+    "git",
+    "graph",
+    "gitflow",
+    "branches",
+    "visual",
+    "canvas",
+    "ai",
+    "commit"
+  ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=18"
   },
   "categories": [
     "Other",
-    "SCM Providers"
+    "Visualization"
   ],
   "activationEvents": [
     "onView:gitflow-studio.canvas",
@@ -102,13 +122,22 @@
     "build": "npm run build:webview && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "build:webview": "cd webview && npm install && npm run build",
+    "build:webview": "cd webview && npm ci && npm run build",
     "dev:webview": "cd webview && npm run dev",
-    "smoke": "npm run compile && node scripts/smoke-git-load.cjs"
+    "smoke": "npm run compile && node scripts/smoke-git-load.cjs",
+    "lint": "eslint src/",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vscode/vsce": "^3.2.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
     "typescript": "^5.4.0"
   },
   "dependencies": {}

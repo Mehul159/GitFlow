@@ -27,6 +27,7 @@ export interface GraphPayload {
 }
 
 const COMMIT_MARKER = "<GFS_COMMIT_END>";
+const FIELD_SEP = "\x00";
 
 async function repoHasCommits(repoRoot: string): Promise<boolean> {
   try {
@@ -72,8 +73,7 @@ export async function loadGraph(
       "%ae",
       "%ct",
       "%D",
-      COMMIT_MARKER,
-    ].join("%n");
+    ].join("%x00") + "%n" + COMMIT_MARKER;
 
     const logOut = await execGit(repoRoot, [
       "log",
@@ -89,12 +89,11 @@ export async function loadGraph(
       .filter(Boolean);
 
     for (const block of blocks) {
-      const lines = block.split("\n");
-      if (lines.length < 6) {
+      const fields = block.split(FIELD_SEP);
+      if (fields.length < 7) {
         continue;
       }
-      const [hash, parentsLine, subject, author, email, ct, ...decRest] = lines;
-      const decoration = decRest.join("\n");
+      const [hash, parentsLine, subject, author, email, ct, decoration] = fields;
       const parents = parentsLine.trim()
         ? parentsLine.trim().split(/\s+/)
         : [];
@@ -105,7 +104,7 @@ export async function loadGraph(
         author: author ?? "",
         email: email ?? "",
         date: Number(ct) || 0,
-        decoration,
+        decoration: decoration ?? "",
       });
     }
   }
@@ -176,26 +175,33 @@ export interface FileStatusRow {
 export async function loadStatus(
   repoRoot: string
 ): Promise<{ files: FileStatusRow[]; clean: boolean }> {
-  const out = await execGit(repoRoot, ["status", "--porcelain"]);
+  const out = await execGit(repoRoot, ["status", "--porcelain", "-z"]);
   const files: FileStatusRow[] = [];
-  for (const line of out.split("\n")) {
-    if (line.length < 4) {
+  const entries = out.split("\0");
+  let i = 0;
+  while (i < entries.length) {
+    const entry = entries[i];
+    if (entry.length < 3) {
+      i++;
       continue;
     }
-    const x = line[0];
-    const y = line[1];
-    let path = line.slice(3).trim();
-    if (path.includes(" -> ")) {
-      path = path.split(" -> ").pop()!.trim();
+    const x = entry[0];
+    const y = entry[1];
+    let filePath = entry.slice(3);
+    const isRename = x === "R" || x === "C" || y === "R" || y === "C";
+    if (isRename && i + 1 < entries.length) {
+      filePath = entries[i + 1];
+      i++;
     }
     const staged = x === " " ? "" : (x as FileStatusRow["staged"]);
     const unstaged = y === " " ? "" : (y as FileStatusRow["unstaged"]);
     files.push({
-      path,
+      path: filePath,
       staged,
       unstaged,
-      display: path,
+      display: filePath,
     });
+    i++;
   }
   return { files, clean: files.length === 0 };
 }

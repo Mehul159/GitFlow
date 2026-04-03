@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
 
 import type {
@@ -37,6 +37,7 @@ const emptyMerge = {
 export default function App() {
   const api = useMemo(() => getVsCodeApi(), []);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
   const [graphErr, setGraphErr] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [statusErr, setStatusErr] = useState<string | null>(null);
@@ -71,12 +72,22 @@ export default function App() {
   const mergeState = extras?.mergeState ?? emptyMerge;
   const aheadBehind = extras?.aheadBehind ?? null;
 
+  const toastTimers = useRef<Map<number, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      for (const t of toastTimers.current.values()) window.clearTimeout(t);
+    };
+  }, []);
+
   const pushToast = useCallback((level: Toast["level"], message: string) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, level, message }]);
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      toastTimers.current.delete(id);
       setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
+    toastTimers.current.set(id, timer);
   }, []);
 
   useEffect(() => {
@@ -87,6 +98,7 @@ export default function App() {
       }
       switch (d.type) {
         case "graph":
+          setGraphLoading(false);
           setGraphErr(typeof d.error === "string" ? d.error : null);
           setGraph(d.payload as GraphPayload | null);
           break;
@@ -332,6 +344,7 @@ export default function App() {
             hasRepo={hasRepo}
             rows={extras?.stash ?? []}
             api={api}
+            error={extrasErr}
           />
         </div>
       ),
@@ -345,6 +358,7 @@ export default function App() {
             hasRepo={hasRepo}
             remotes={extras?.remotes ?? []}
             api={api}
+            error={extrasErr}
           />
         </div>
       ),
@@ -359,6 +373,7 @@ export default function App() {
             tags={extras?.tags ?? []}
             api={api}
             headHash={graph?.head ?? null}
+            error={extrasErr}
           />
         </div>
       ),
@@ -394,7 +409,9 @@ export default function App() {
               GitFlow Studio
             </div>
             <div className="mt-0.5 text-[10px] text-gfs-muted flex items-center gap-1">
-              <kbd className="rounded bg-gfs-surface2 px-1.5 py-0.5 text-[9px] font-mono">⌘K</kbd>
+              <kbd className="rounded bg-gfs-surface2 px-1.5 py-0.5 text-[9px] font-mono">
+                {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl+"}K
+              </kbd>
               <span className="text-gfs-muted/60">palette</span>
             </div>
           </div>
@@ -469,6 +486,7 @@ export default function App() {
               <ReactFlowProvider>
                 <CommitGraph
                   graph={graph}
+                  loading={graphLoading}
                   view={canvasView}
                   selected={selectedCommit}
                   onSelect={setSelectedCommit}
@@ -476,6 +494,7 @@ export default function App() {
                   onBranchMergeRequest={
                     hasRepo && api ? onBranchMergeRequest : undefined
                   }
+                  api={hasRepo ? api : null}
                 />
               </ReactFlowProvider>
             )}
@@ -490,6 +509,15 @@ export default function App() {
                 {graph?.commits.length ?? 0} commits
                 {diffAnchor ? ` · compare ${diffAnchor.slice(0, 7)}` : ""}
               </span>
+              {graph && graph.commits.length >= 100 ? (
+                <button
+                  type="button"
+                  className="rounded bg-gfs-surface2 px-2 py-0.5 text-[10px] text-gfs-accent hover:bg-gfs-surface2/80"
+                  onClick={() => api?.postMessage({ type: "loadMore" })}
+                >
+                  Load more…
+                </button>
+              ) : null}
             </div>
             <span className="shrink-0 text-gfs-muted/60 text-[10px]">GitFlow Studio</span>
           </footer>
@@ -497,6 +525,7 @@ export default function App() {
             graph={graph}
             hash={selectedCommit}
             onClose={() => setSelectedCommit(null)}
+            onSelectCommit={setSelectedCommit}
             api={api}
           />
         </main>

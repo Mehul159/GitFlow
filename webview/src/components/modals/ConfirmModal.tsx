@@ -4,6 +4,7 @@ interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  onCancel?: () => void;
   title: string;
   message: string;
   confirmLabel?: string;
@@ -15,6 +16,7 @@ export function ConfirmModal({
   isOpen, 
   onClose, 
   onConfirm, 
+  onCancel,
   title, 
   message, 
   confirmLabel = "Confirm", 
@@ -25,7 +27,7 @@ export function ConfirmModal({
     <BaseModal isOpen={isOpen} onClose={onClose} title={title}>
       <p className="mb-4 text-sm text-neutral-400">{message}</p>
       <ModalActions>
-        <ModalButton onClick={onClose} variant="secondary">{cancelLabel}</ModalButton>
+        <ModalButton onClick={onCancel ?? onClose} variant="secondary">{cancelLabel}</ModalButton>
         <ModalButton onClick={onConfirm} variant={variant === "danger" ? "danger" : variant === "warning" ? "warning" : "primary"}>
           {confirmLabel}
         </ModalButton>

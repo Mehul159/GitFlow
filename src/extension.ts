@@ -50,6 +50,14 @@ export function activate(context: vscode.ExtensionContext) {
       }, 400);
     })
   );
+  context.subscriptions.push({
+    dispose() {
+      if (editorRefreshTimer !== undefined) {
+        clearTimeout(editorRefreshTimer);
+        editorRefreshTimer = undefined;
+      }
+    },
+  });
 }
 
 export function deactivate() {}
@@ -206,12 +214,8 @@ class GitFlowWebviewViewProvider implements vscode.WebviewViewProvider {
 }
 
 function getNonce(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let t = "";
-  for (let i = 0; i < 32; i++) {
-    t += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return t;
+  const crypto = require("crypto") as typeof import("crypto");
+  return crypto.randomBytes(16).toString("hex");
 }
 
 function getGitRootSync(workspaceRoot: string): string | null {

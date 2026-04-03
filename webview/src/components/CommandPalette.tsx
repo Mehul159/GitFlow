@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Item = {
   id: string;
@@ -17,13 +17,20 @@ export function CommandPalette(props: {
 }) {
   const [q, setQ] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     if (props.open) {
       setQ("");
       setActiveCategory(null);
+      setActiveIdx(0);
     }
   }, [props.open]);
+
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [q, activeCategory]);
 
   const categories = [
     { id: "sync", label: "Sync", icon: "↻" },
@@ -99,7 +106,11 @@ export function CommandPalette(props: {
           label: "Force push",
           keywords: "force upload remote danger",
           category: "sync",
-          run: () => a?.postMessage({ type: "push", force: true }),
+          run: () => {
+            if (window.confirm("Force push can overwrite remote history. Continue?")) {
+              a?.postMessage({ type: "push", force: true });
+            }
+          },
         },
         // Branch
         {
@@ -151,7 +162,11 @@ export function CommandPalette(props: {
           label: "Clear all stashes",
           keywords: "delete remove stash",
           category: "stash",
-          run: () => a?.postMessage({ type: "stashClear" }),
+          run: () => {
+            if (window.confirm("Clear ALL stashes? This cannot be undone.")) {
+              a?.postMessage({ type: "stashClear" });
+            }
+          },
         },
         // Maintenance
         {
@@ -233,6 +248,13 @@ export function CommandPalette(props: {
           category: "sync",
           run: () => a?.postMessage({ type: "cherryPickAbort" }),
         },
+        {
+          id: "revert-abort",
+          label: "Abort revert",
+          keywords: "cancel undo",
+          category: "sync",
+          run: () => a?.postMessage({ type: "revertAbort" }),
+        },
         // Submodule
         {
           id: "submodule-update",
@@ -275,6 +297,14 @@ export function CommandPalette(props: {
     return groups;
   }, [filtered]);
 
+  const flatOrdered = useMemo(() => {
+    const out: Item[] = [];
+    for (const [, categoryItems] of Object.entries(groupedItems)) {
+      out.push(...categoryItems);
+    }
+    return out;
+  }, [groupedItems]);
+
   if (!props.open) {
     return null;
   }
@@ -305,6 +335,18 @@ export function CommandPalette(props: {
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 props.onClose();
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActiveIdx((i) => Math.min(i + 1, flatOrdered.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActiveIdx((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (flatOrdered[activeIdx]) {
+                  flatOrdered[activeIdx].run();
+                  props.onClose();
+                }
               }
             }}
           />
@@ -339,28 +381,44 @@ export function CommandPalette(props: {
         </div>
 
         {/* Results */}
-        <ul className="max-h-[50vh] overflow-y-auto py-2">
-          {Object.entries(groupedItems).map(([category, categoryItems]) => (
-            <li key={category}>
-              <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-                {categories.find((c) => c.id === category)?.label || category}
-              </div>
-              {categoryItems.map((i) => (
-                <button
-                  key={i.id}
-                  type="button"
-                  className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-neutral-800"
-                  onClick={() => {
-                    i.run();
-                    props.onClose();
-                  }}
-                >
-                  <span className="text-sm font-medium text-neutral-200">{i.label}</span>
-                  <span className="text-xs text-neutral-500">{i.sub}</span>
-                </button>
-              ))}
-            </li>
-          ))}
+        <ul ref={listRef} className="max-h-[50vh] overflow-y-auto py-2">
+          {(() => {
+            let flatIdx = 0;
+            return Object.entries(groupedItems).map(([category, categoryItems]) => (
+              <li key={category}>
+                <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+                  {categories.find((c) => c.id === category)?.label || category}
+                </div>
+                {categoryItems.map((i) => {
+                  const idx = flatIdx++;
+                  const isActive = idx === activeIdx;
+                  return (
+                    <button
+                      key={i.id}
+                      type="button"
+                      ref={(el) => {
+                        if (isActive && el) {
+                          el.scrollIntoView({ block: "nearest" });
+                        }
+                      }}
+                      className={[
+                        "flex w-full items-center justify-between px-4 py-2.5 text-left",
+                        isActive ? "bg-orange-500/20 text-white" : "hover:bg-neutral-800",
+                      ].join(" ")}
+                      onMouseEnter={() => setActiveIdx(idx)}
+                      onClick={() => {
+                        i.run();
+                        props.onClose();
+                      }}
+                    >
+                      <span className="text-sm font-medium text-neutral-200">{i.label}</span>
+                      <span className="text-xs text-neutral-500">{i.sub}</span>
+                    </button>
+                  );
+                })}
+              </li>
+            ));
+          })()}
           {filtered.length === 0 ? (
             <li className="px-4 py-8 text-center text-sm text-neutral-500">
               No commands found

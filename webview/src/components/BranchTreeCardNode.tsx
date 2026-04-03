@@ -44,6 +44,9 @@ function BranchTreeCardNodeInner({ data, selected }: NodeProps<BranchTreeCardDat
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Branch ${data.name}${data.stale ? " (stale)" : ""}`}
       className={[
         "w-[260px] rounded-gfs border-2 bg-gfs-surface/95 shadow-node backdrop-blur-sm transition-all duration-200",
         dim,
@@ -62,7 +65,13 @@ function BranchTreeCardNodeInner({ data, selected }: NodeProps<BranchTreeCardDat
         className="!h-3.5 !w-3.5 !border-2 !border-gfs-bg !bg-gfs-accent"
         isConnectable
       />
-      <div className="flex items-start gap-2.5 p-3">
+      <div className="flex flex-col">
+        <div className="flex items-center justify-between border-b border-gfs-accent/20 bg-gfs-primary/60 px-3 py-1">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-gfs-accent">
+            {data.folderLabel}
+          </span>
+        </div>
+        <div className="flex items-start gap-2.5 p-3">
         <div
           className={[
             "mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full",
@@ -107,6 +116,7 @@ function BranchTreeCardNodeInner({ data, selected }: NodeProps<BranchTreeCardDat
             HEAD
           </div>
         ) : null}
+      </div>
       </div>
       <Handle
         type="source"

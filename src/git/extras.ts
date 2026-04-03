@@ -133,7 +133,8 @@ export async function loadStashes(repoRoot: string): Promise<StashRow[]> {
     }
     const id = parts[0];
     const m = /^stash@\{(\d+)\}$/.exec(id);
-    const index = m ? Number(m[1]) : rows.length;
+    if (!m) continue;
+    const index = Number(m[1]);
     rows.push({
       id,
       index,

@@ -21,6 +21,7 @@ export interface WebviewHandlerContext {
   getGitRoot: () => string | null;
   maxCommits: () => number;
   postConfig: () => void;
+  loadedCommits?: number;
 }
 
 function toast(
@@ -144,6 +145,10 @@ async function pushSuggest(
   } satisfies HostToWebview);
 }
 
+function isValidStashIndex(index: unknown): index is number {
+  return typeof index === "number" && Number.isInteger(index) && index >= 0;
+}
+
 function stashRef(index: number): string {
   return `stash@{${index}}`;
 }
@@ -168,10 +173,19 @@ function safePathUnderRoot(root: string, rel: string): string | null {
   return full;
 }
 
+function isValidMessage(msg: unknown): msg is WebviewToHost {
+  if (!msg || typeof msg !== "object") return false;
+  const m = msg as Record<string, unknown>;
+  return typeof m.type === "string" && m.type.length > 0;
+}
+
 export async function handleWebviewMessage(
   ctx: WebviewHandlerContext,
   msg: WebviewToHost
 ): Promise<void> {
+  if (!isValidMessage(msg)) {
+    return;
+  }
   const ws = ctx.workspaceRoot;
   const cfg = vscode.workspace.getConfiguration("gitflow-studio");
   const pullRebase = Boolean(cfg.get<boolean>("pullWithRebase"));
@@ -227,8 +241,8 @@ export async function handleWebviewMessage(
           return;
         }
         const url = msg.url.trim();
-        if (!url) {
-          toast(ctx.webview, "error", "Clone URL is empty.");
+        if (!url || url.length > 2048 || url.startsWith("-") || url.includes("..")) {
+          toast(ctx.webview, "error", "Invalid or empty clone URL.");
           return;
         }
         const name = cloneFolderName(url);
@@ -241,7 +255,7 @@ export async function handleWebviewMessage(
           );
           return;
         }
-        await execGit(ws, ["clone", url, name]);
+        await execGit(ws, ["clone", "--", url, name]);
         toast(
           ctx.webview,
           "info",
@@ -360,7 +374,12 @@ export async function handleWebviewMessage(
         if (!r || msg.paths.length === 0) {
           return;
         }
-        await execGit(r, ["add", "--", ...msg.paths]);
+        const safePaths = msg.paths.filter((p: string) => safePathUnderRoot(r, p) !== null);
+        if (safePaths.length === 0) {
+          toast(ctx.webview, "error", "All paths are outside the repository.");
+          return;
+        }
+        await execGit(r, ["add", "--", ...safePaths]);
         await pushFullSync(ctx);
         break;
       }
@@ -370,8 +389,16 @@ export async function handleWebviewMessage(
         if (!r) {
           return;
         }
+        let skippedCount = 0;
         for (const p of msg.paths) {
+          if (safePathUnderRoot(r, p) === null) {
+            skippedCount++;
+            continue;
+          }
           await execGit(r, ["restore", "--staged", "--", p]);
+        }
+        if (skippedCount > 0) {
+          toast(ctx.webview, "error", `${skippedCount} path(s) skipped — outside the repository.`);
         }
         await pushFullSync(ctx);
         break;
@@ -392,7 +419,12 @@ export async function handleWebviewMessage(
         if (!r || msg.paths.length === 0) {
           return;
         }
-        await execGit(r, ["restore", "--worktree", "--", ...msg.paths]);
+        const safeDiscard = msg.paths.filter((p: string) => safePathUnderRoot(r, p) !== null);
+        if (safeDiscard.length === 0) {
+          toast(ctx.webview, "error", "All paths are outside the repository.");
+          return;
+        }
+        await execGit(r, ["restore", "--worktree", "--", ...safeDiscard]);
         toast(ctx.webview, "info", "Discarded working tree changes for selected files.");
         await pushFullSync(ctx);
         break;
@@ -403,7 +435,12 @@ export async function handleWebviewMessage(
         if (!r || msg.paths.length === 0) {
           return;
         }
-        await execGit(r, ["rm", "--cached", "--", ...msg.paths]);
+        const safeRm = msg.paths.filter((p: string) => safePathUnderRoot(r, p) !== null);
+        if (safeRm.length === 0) {
+          toast(ctx.webview, "error", "All paths are outside the repository.");
+          return;
+        }
+        await execGit(r, ["rm", "--cached", "--", ...safeRm]);
         await pushFullSync(ctx);
         break;
       }
@@ -454,6 +491,14 @@ export async function handleWebviewMessage(
         if (!r) {
           return;
         }
+        if (msg.remote?.trim() && !isSafeRemoteName(msg.remote.trim())) {
+          toast(ctx.webview, "error", "Invalid remote name.");
+          return;
+        }
+        if (msg.branch?.trim() && !isSafeGitRefName(msg.branch.trim())) {
+          toast(ctx.webview, "error", "Invalid branch name.");
+          return;
+        }
         const rb = msg.rebase ?? pullRebase;
         const args = ["pull"];
         if (rb) {
@@ -474,6 +519,14 @@ export async function handleWebviewMessage(
       case "push": {
         const r = needRoot();
         if (!r) {
+          return;
+        }
+        if (msg.remote?.trim() && !isSafeRemoteName(msg.remote.trim())) {
+          toast(ctx.webview, "error", "Invalid remote name.");
+          return;
+        }
+        if (msg.branch?.trim() && !isSafeGitRefName(msg.branch.trim())) {
+          toast(ctx.webview, "error", "Invalid branch name.");
           return;
         }
         const args = ["push"];
@@ -516,6 +569,14 @@ export async function handleWebviewMessage(
         const branch = msg.branch?.trim();
         if (!branch) {
           toast(ctx.webview, "error", "No branch specified.");
+          return;
+        }
+        if (!isSafeRemoteName(remote)) {
+          toast(ctx.webview, "error", "Invalid remote name.");
+          return;
+        }
+        if (!isSafeGitRefName(branch)) {
+          toast(ctx.webview, "error", "Invalid branch name.");
           return;
         }
         const args = ["push", "-u", remote, branch];
@@ -591,9 +652,10 @@ export async function handleWebviewMessage(
           } satisfies HostToWebview);
           return;
         }
+        let prevBranch: string | null = null;
         try {
-          const cur = (await execGit(r, ["branch", "--show-current"])).trim();
-          if (cur !== into) {
+          prevBranch = (await execGit(r, ["branch", "--show-current"])).trim() || null;
+          if (prevBranch !== into) {
             await execGit(r, ["checkout", into]);
           }
           if (msg.squash) {
@@ -626,6 +688,13 @@ export async function handleWebviewMessage(
           const ex = await loadRepoExtras(r);
           const conflict =
             ex.mergeState.merging && ex.mergeState.conflictFiles.length > 0;
+
+          if (!conflict && prevBranch && prevBranch !== into) {
+            try {
+              await execGit(r, ["checkout", prevBranch]);
+            } catch { /* best-effort restore */ }
+          }
+
           ctx.webview.postMessage({
             type: "mergeResult",
             status: conflict ? "conflict" : "error",
@@ -711,6 +780,17 @@ export async function handleWebviewMessage(
         break;
       }
 
+      case "revertAbort": {
+        const r = needRoot();
+        if (!r) {
+          return;
+        }
+        await execGit(r, ["revert", "--abort"]);
+        toast(ctx.webview, "info", "Revert aborted.");
+        await pushFullSync(ctx);
+        break;
+      }
+
       case "reset": {
         const r = needRoot();
         if (!r) {
@@ -749,6 +829,10 @@ export async function handleWebviewMessage(
         if (!r) {
           return;
         }
+        if (!isValidStashIndex(msg.index)) {
+          toast(ctx.webview, "error", "Invalid stash index.");
+          return;
+        }
         await execGit(r, ["stash", "pop", stashRef(msg.index)]);
         toast(ctx.webview, "info", "Stash popped.");
         await pushFullSync(ctx);
@@ -760,6 +844,10 @@ export async function handleWebviewMessage(
         if (!r) {
           return;
         }
+        if (!isValidStashIndex(msg.index)) {
+          toast(ctx.webview, "error", "Invalid stash index.");
+          return;
+        }
         await execGit(r, ["stash", "apply", stashRef(msg.index)]);
         toast(ctx.webview, "info", "Stash applied.");
         await pushFullSync(ctx);
@@ -769,6 +857,10 @@ export async function handleWebviewMessage(
       case "stashDrop": {
         const r = needRoot();
         if (!r) {
+          return;
+        }
+        if (!isValidStashIndex(msg.index)) {
+          toast(ctx.webview, "error", "Invalid stash index.");
           return;
         }
         await execGit(r, ["stash", "drop", stashRef(msg.index)]);
@@ -791,6 +883,10 @@ export async function handleWebviewMessage(
       case "stashBranch": {
         const r = needRoot();
         if (!r) {
+          return;
+        }
+        if (!isValidStashIndex(msg.index)) {
+          toast(ctx.webview, "error", "Invalid stash index.");
           return;
         }
         const bn = msg.branch.trim();
@@ -939,7 +1035,7 @@ export async function handleWebviewMessage(
         if (!r) {
           return;
         }
-        await execGit(r, msg.dirs === false ? ["clean", "-f"] : ["clean", "-fd"]);
+        await execGit(r, msg.dirs === true ? ["clean", "-fd"] : ["clean", "-f"]);
         toast(ctx.webview, "info", "Clean complete.");
         await pushFullSync(ctx);
         break;
@@ -1070,6 +1166,10 @@ export async function handleWebviewMessage(
           }
           body = await execGit(r, ["diff", "--no-color", msg.from, msg.to]);
         } else if (msg.path) {
+          if (safePathUnderRoot(r, msg.path) === null) {
+            toast(ctx.webview, "error", "Invalid path.");
+            return;
+          }
           const args = ["diff", "--no-color"];
           if (msg.staged) {
             args.push("--cached");
@@ -1118,6 +1218,10 @@ export async function handleWebviewMessage(
         if (!r) {
           return;
         }
+        if (safePathUnderRoot(r, msg.path) === null) {
+          toast(ctx.webview, "error", "Invalid path.");
+          return;
+        }
         const body = await execGit(r, ["blame", "--date=short", "--", msg.path]);
         ctx.webview.postMessage({
           type: "textDocument",
@@ -1155,6 +1259,23 @@ export async function handleWebviewMessage(
         }
         const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(full));
         await vscode.window.showTextDocument(doc);
+        break;
+      }
+
+      case "loadMore": {
+        const r = needRoot();
+        if (!r) return;
+        const prev = ctx.loadedCommits ?? ctx.maxCommits();
+        const newMax = prev + 200;
+        ctx.loadedCommits = newMax;
+        try {
+          const graph = await loadGraph(r, newMax);
+          ctx.webview.postMessage({ type: "graph", payload: graph } satisfies HostToWebview);
+        } catch (e: unknown) {
+          const text =
+            e instanceof GitError ? e.message : e instanceof Error ? e.message : String(e);
+          toast(ctx.webview, "error", text);
+        }
         break;
       }
 

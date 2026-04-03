@@ -8,6 +8,22 @@
             "problemMatcher": "$tsc",
             "label": "npm: compile",
             "detail": "Compile TypeScript"
+        },
+        {
+            "type": "npm",
+            "script": "build:webview",
+            "group": "build",
+            "label": "npm: build:webview",
+            "detail": "Build webview (Vite)"
+        },
+        {
+            "label": "build all",
+            "dependsOn": ["npm: build:webview", "npm: compile"],
+            "dependsOrder": "sequence",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
         }
     ]
 }

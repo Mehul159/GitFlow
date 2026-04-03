@@ -4,4 +4,3 @@ dist/
 media/webview/
 *.vsix
 .DS_Store
-docs/

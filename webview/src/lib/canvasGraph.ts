@@ -194,16 +194,10 @@ export type BranchTreeCardData = {
   health: "good" | "warn" | "poor";
   stale: boolean;
   folder: BranchFolderId;
-};
-
-export type BranchFolderNodeData = {
-  folderId: BranchFolderId;
-  label: string;
-  branchCount: number;
+  folderLabel: string;
 };
 
 const FOLDER_W = 260;
-const FOLDER_HEADER_H = 44;
 const CARD_GAP_Y = 12;
 const FOLDER_GAP_X = 48;
 const COL_TOP = 40;
@@ -333,7 +327,7 @@ export function buildBranchTreeFlow(
 
   for (const bd of branchData) {
     const tipCommit = commitMap.get(bd.branch.hash);
-    const lastMs = tipCommit?.date ?? 0;
+    const lastMs = tipCommit ? tipCommit.date * 1000 : 0;
     rows.push({
       kind: "local",
       name: bd.branch.name,
@@ -361,7 +355,7 @@ export function buildBranchTreeFlow(
       name: r.name,
       hash: r.hash,
       commitCount: countCommitsOnBranch(commits, r.hash),
-      lastMs: commitMap.get(r.hash)?.date ?? 0,
+      lastMs: commitMap.has(r.hash) ? commitMap.get(r.hash)!.date * 1000 : 0,
       folder: detectBranchFolder(key),
     });
   }
@@ -395,23 +389,6 @@ export function buildBranchTreeFlow(
     const x = col * (FOLDER_W + FOLDER_GAP_X);
     let y = COL_TOP;
 
-    nodes.push({
-      id: `folder:${folderId}`,
-      type: "branchFolder",
-      position: { x, y },
-      data: {
-        folderId,
-        label: FOLDER_LABEL[folderId],
-        branchCount: list.length,
-      } as BranchFolderNodeData,
-      width: FOLDER_W,
-      height: FOLDER_HEADER_H,
-      draggable: false,
-      selectable: false,
-    });
-
-    y += FOLDER_HEADER_H + CARD_GAP_Y;
-
     for (const row of list) {
       const stale = row.lastMs > 0 && now - row.lastMs > STALE_MS;
       let health: "good" | "warn" | "poor" = "good";
@@ -440,9 +417,11 @@ export function buildBranchTreeFlow(
           health,
           stale,
           folder: folderId,
+          folderLabel: FOLDER_LABEL[folderId],
         } as BranchTreeCardData,
         width: FOLDER_W,
         height: BRANCH_H,
+        draggable: true,
       });
 
       y += BRANCH_H + CARD_GAP_Y;
@@ -466,6 +445,7 @@ export function buildBranchTreeFlow(
         health: "poor",
         stale: false,
         folder: "other",
+        folderLabel: "Other",
       } as BranchTreeCardData,
       width: FOLDER_W,
       height: BRANCH_H,

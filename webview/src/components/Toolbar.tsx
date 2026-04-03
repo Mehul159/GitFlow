@@ -130,6 +130,17 @@ export function Toolbar(props: {
                   Abort cherry-pick
                 </button>
               ) : null}
+              {ms?.revert ? (
+                <button
+                  type="button"
+                  className="rounded bg-gfs-surface2 px-2 py-0.5 text-[10px]"
+                  onClick={() =>
+                    props.api?.postMessage({ type: "revertAbort" })
+                  }
+                >
+                  Abort revert
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -176,10 +187,10 @@ export function Toolbar(props: {
 
           {props.api ? (
             <>
-          {/* Branch + Button */}
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-white shadow-lg shadow-orange-500/20 hover:bg-orange-600 hover:scale-105 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500 text-white shadow-lg shadow-orange-500/20 hover:bg-orange-600 hover:scale-105 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             title="Create new branch"
             onClick={() => setBranchModal({ isOpen: true })}
           >
@@ -190,7 +201,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02]"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02] disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => props.api?.postMessage({ type: "fetch" })}
           >
             Fetch
@@ -198,7 +210,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02]"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] font-medium text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 hover:scale-[1.02] disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setPullConfirm(true)}
           >
             Pull
@@ -206,7 +219,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gradient-to-r from-ignite/80 to-ignite px-3 py-1.5 text-[12px] font-semibold text-chalk shadow-lg shadow-ignite/20 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gradient-to-r from-ignite/80 to-ignite px-3 py-1.5 text-[12px] font-semibold text-chalk shadow-lg shadow-ignite/20 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => props.api?.postMessage({ type: "push" })}
           >
             Push
@@ -214,7 +228,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-red-500/20 px-3 py-1.5 text-[12px] font-semibold text-red-400 ring-1 ring-red-500/30 hover:bg-red-500/30 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-red-500/20 px-3 py-1.5 text-[12px] font-semibold text-red-400 ring-1 ring-red-500/30 hover:bg-red-500/30 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setForcePushModal(true)}
           >
             Force Push
@@ -224,7 +239,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setMergeModalOpen(true)}
           >
             Merge
@@ -232,7 +248,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setRebaseModal(true)}
           >
             Rebase
@@ -240,7 +257,8 @@ export function Toolbar(props: {
           
           <button
             type="button"
-            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200"
+            disabled={!props.hasRepo}
+            className="rounded-lg bg-gfs-surface2 px-3 py-1.5 text-[12px] text-gfs-text hover:bg-gfs-surface2/80 transition-all duration-200 disabled:opacity-40 disabled:pointer-events-none"
             onClick={() => setBranchModal({ isOpen: true })}
           >
             Branch
@@ -270,12 +288,13 @@ export function Toolbar(props: {
       <ConfirmModal
         isOpen={pullConfirm}
         title="Pull Options"
-        message="Do you want to pull with rebase?"
+        message="Do you want to pull with rebase, or a normal merge pull?"
         confirmLabel="Pull with Rebase"
         cancelLabel="Pull (merge)"
         variant="warning"
         onConfirm={() => handlePull(true)}
-        onClose={() => handlePull(false)}
+        onCancel={() => handlePull(false)}
+        onClose={() => setPullConfirm(false)}
       />
 
       {/* Merge Modal */}

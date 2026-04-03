@@ -46,17 +46,3 @@ export async function execGit(
   }
 }
 
-export async function getGitRoot(
-  workspaceRoot: string
-): Promise<string | null> {
-  try {
-    const out = await execGit(workspaceRoot, [
-      "rev-parse",
-      "--show-toplevel",
-    ]);
-    const root = out.trim();
-    return root || null;
-  } catch {
-    return null;
-  }
-}

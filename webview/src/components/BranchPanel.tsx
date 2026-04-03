@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { GraphPayload } from "../types";
-import { groupBranches } from "../lib/branchFolders";
+import { detectBranchFolder, FOLDER_LABEL, FOLDER_ORDER } from "../lib/branchFolderDetect";
 import Badge from "@/components/ui/badge";
 
 export function BranchPanel(props: {
@@ -40,10 +40,27 @@ export function BranchPanel(props: {
       .sort((a, b) => a.localeCompare(b));
   }, [props.graph]);
 
-  const grouped = useMemo(() => groupBranches(locals), [locals]);
+  const grouped = useMemo(() => {
+    const groups: Record<string, string[]> = {};
+    for (const name of locals) {
+      const folderId = detectBranchFolder(name);
+      const label = FOLDER_LABEL[folderId];
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(name);
+    }
+    for (const k of Object.keys(groups)) {
+      groups[k].sort((a, b) => a.localeCompare(b));
+    }
+    return groups;
+  }, [locals]);
 
   const folders = useMemo(
-    () => Object.keys(grouped).sort((a, b) => a.localeCompare(b)),
+    () => {
+      const folderLabels = FOLDER_ORDER.map((id) => FOLDER_LABEL[id]);
+      return Object.keys(grouped).sort(
+        (a, b) => folderLabels.indexOf(a) - folderLabels.indexOf(b)
+      );
+    },
     [grouped]
   );
 
@@ -113,7 +130,8 @@ export function BranchPanel(props: {
                           <div className="flex shrink-0 flex-col gap-0.5">
                             <button
                               type="button"
-                              className="rounded px-1.5 py-0.5 text-[9px] text-gfs-muted hover:bg-gfs-surface2"
+                              disabled={!props.api}
+                              className="rounded px-1.5 py-0.5 text-[9px] text-gfs-muted hover:bg-gfs-surface2 disabled:opacity-30 disabled:pointer-events-none"
                               title="Rename"
                               onClick={() => {
                                 const nn = window.prompt("New branch name:", b);
@@ -131,7 +149,8 @@ export function BranchPanel(props: {
                             </button>
                             <button
                               type="button"
-                              className="rounded px-1.5 py-0.5 text-[10px] text-gfs-danger hover:bg-gfs-danger/15"
+                              disabled={!props.api}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-gfs-danger hover:bg-gfs-danger/15 disabled:opacity-30 disabled:pointer-events-none"
                               title="Delete branch"
                               onClick={() => {
                                 if (

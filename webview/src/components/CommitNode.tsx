@@ -16,6 +16,9 @@ export type CommitNodeData = {
 function CommitNodeInner({ data, selected }: NodeProps<CommitNodeData>) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Commit ${data.short}: ${data.subject}`}
       className={[
         "w-[200px] rounded-gfs border bg-gfs-surface/95 shadow-node backdrop-blur-sm transition-all duration-200",
         data.isRemoteGhost ? "border-dashed border-gfs-muted/60 opacity-90" : "border-gfs-surface2",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { motion } from "framer-motion";
 import ReactFlow, {
   Background,
@@ -23,7 +23,6 @@ import {
   type BranchTreeCardData,
   type CanvasViewMode,
 } from "../lib/canvasGraph";
-import { BranchFolderNode } from "./BranchFolderNode";
 import { BranchTreeCardNode } from "./BranchTreeCardNode";
 import { CommitNode } from "./CommitNode";
 
@@ -158,6 +157,22 @@ function EmptyRepoCanvas(props: { graph: GraphPayload }) {
   );
 }
 
+function LoadingPlaceholder() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+      <div className="flex items-center gap-3">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-gfs-accent border-t-transparent" />
+        <div className="text-sm font-medium text-gfs-muted">Loading repository…</div>
+      </div>
+      <div className="flex gap-3 opacity-30">
+        <div className="h-12 w-36 animate-pulse rounded-lg bg-gfs-surface2" />
+        <div className="h-12 w-36 animate-pulse rounded-lg bg-gfs-surface2 delay-75" />
+        <div className="h-12 w-36 animate-pulse rounded-lg bg-gfs-surface2 delay-150" />
+      </div>
+    </div>
+  );
+}
+
 function NoRepoPlaceholder() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -176,7 +191,6 @@ const commitGraphNodeTypes = {
 };
 
 const branchTreeNodeTypes = {
-  branchFolder: BranchFolderNode,
   branchTreeCard: BranchTreeCardNode,
 };
 
@@ -203,14 +217,34 @@ function GraphCanvasBody(props: {
     fromRemote: boolean;
     intoRemote: boolean;
   }) => void;
+  api?: { postMessage: (m: unknown) => void } | null;
 }) {
   const connectStartRef = useRef<{ nodeId: string; handleType: string } | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hash: string } | null>(null);
 
   const flow = useMemo(() => {
     return props.view === "commitGraph"
       ? buildCommitGraphFlow(props.graph)
       : buildBranchTreeFlow(props.graph);
   }, [props.graph, props.view]);
+
+  const searchMatchIds = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q || props.view !== "commitGraph") return null;
+    const hits = new Set<string>();
+    for (const c of props.graph.commits) {
+      if (
+        c.hash.toLowerCase().startsWith(q) ||
+        c.subject.toLowerCase().includes(q) ||
+        c.author.toLowerCase().includes(q)
+      ) {
+        hits.add(c.hash);
+      }
+    }
+    if (hits.size === 0) return "empty" as const;
+    return hits;
+  }, [searchTerm, props.graph.commits, props.view]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flow.edges);
@@ -225,8 +259,16 @@ function GraphCanvasBody(props: {
   useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => {
+        const dimmed =
+          searchMatchIds !== null &&
+          searchMatchIds !== "empty" &&
+          !searchMatchIds.has(n.id);
         if (props.view === "commitGraph") {
-          return { ...n, selected: n.id === props.selected };
+          return {
+            ...n,
+            selected: n.id === props.selected,
+            style: dimmed ? { opacity: 0.25 } : undefined,
+          };
         }
         const tip =
           typeof n.data === "object" &&
@@ -239,13 +281,10 @@ function GraphCanvasBody(props: {
         return { ...n, selected: Boolean(sel) };
       })
     );
-  }, [props.selected, props.view, setNodes]);
+  }, [props.selected, props.view, setNodes, searchMatchIds]);
 
   const getNodeColor = useCallback(
     (n: Node) => {
-      if (n.type === "branchFolder") {
-        return "#F59E0B";
-      }
       if (n.type === "branchTreeCard") {
         return "#22C55E";
       }
@@ -278,7 +317,17 @@ function GraphCanvasBody(props: {
 
   const onPaneClick = useCallback(() => {
     props.onSelect(null);
+    setCtxMenu(null);
   }, [props]);
+
+  const onNodeContextMenu = useCallback(
+    (event: MouseEvent, n: Node) => {
+      if (props.view !== "commitGraph") return;
+      event.preventDefault();
+      setCtxMenu({ x: event.clientX, y: event.clientY, hash: n.id });
+    },
+    [props.view]
+  );
 
   const isValidConnection = useCallback(
     (edge: Connection) => {
@@ -353,6 +402,35 @@ function GraphCanvasBody(props: {
     [nodes, props.onBranchMergeRequest]
   );
 
+  const commitIds = useMemo(() => {
+    if (props.view !== "commitGraph") return [];
+    const commitNodes = nodes
+      .filter((n) => n.type === "commit")
+      .sort((a, b) => (a.position.y ?? 0) - (b.position.y ?? 0));
+    return commitNodes.map((n) => n.id);
+  }, [nodes, props.view]);
+
+  const onGraphKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (props.view !== "commitGraph" || commitIds.length === 0) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const curIdx = props.selected ? commitIds.indexOf(props.selected) : -1;
+        const next = Math.min(curIdx + 1, commitIds.length - 1);
+        props.onSelect(commitIds[next]);
+      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const curIdx = props.selected ? commitIds.indexOf(props.selected) : commitIds.length;
+        const prev = Math.max(curIdx - 1, 0);
+        props.onSelect(commitIds[prev]);
+      } else if (e.key === "Escape") {
+        props.onSelect(null);
+        setCtxMenu(null);
+      }
+    },
+    [props.view, props.selected, props.onSelect, commitIds]
+  );
+
   const nodeTypes =
     props.view === "commitGraph" ? commitGraphNodeTypes : branchTreeNodeTypes;
 
@@ -361,6 +439,8 @@ function GraphCanvasBody(props: {
   return (
     <motion.div
       key={props.view}
+      tabIndex={0}
+      onKeyDown={onGraphKeyDown}
       className="h-full w-full min-h-[200px]"
       initial={{ opacity: 0, scale: 0.985 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -372,6 +452,7 @@ function GraphCanvasBody(props: {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeContextMenu={onNodeContextMenu}
         onPaneClick={onPaneClick}
         onConnectStart={branchTreeConnect ? onConnectStart : undefined}
         onConnect={branchTreeConnect ? onConnect : undefined}
@@ -382,12 +463,54 @@ function GraphCanvasBody(props: {
         maxZoom={1.85}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: "smoothstep" }}
-        nodesDraggable={false}
+        nodesDraggable={props.view === "branchTree"}
         nodesConnectable={Boolean(branchTreeConnect)}
         connectionRadius={28}
         connectionLineStyle={{ stroke: "#F97316", strokeWidth: 2 }}
       >
         <FitViewOnDataChange sig={fitSig} />
+        {props.view === "commitGraph" ? (
+          <Panel
+            position="top-right"
+            className="!m-2"
+          >
+            <div className="flex items-center gap-1.5 rounded-lg border border-gfs-surface2 bg-gfs-bg/90 px-2.5 py-1.5 shadow-lg backdrop-blur-sm">
+              <svg className="h-3.5 w-3.5 text-gfs-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search commits…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-36 bg-transparent text-[11px] text-gfs-text placeholder-gfs-muted outline-none"
+              />
+              {searchTerm ? (
+                <button
+                  type="button"
+                  className="text-gfs-muted hover:text-gfs-text"
+                  onClick={() => setSearchTerm("")}
+                >
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              ) : null}
+              {searchMatchIds !== null ? (
+                <span className="text-[9px] text-gfs-muted">
+                  {searchMatchIds === "empty" ? "0" : searchMatchIds.size}
+                </span>
+              ) : null}
+            </div>
+          </Panel>
+        ) : null}
+        {searchMatchIds === "empty" ? (
+          <Panel position="top-center" className="!mt-12">
+            <div className="rounded-lg border border-gfs-surface2 bg-gfs-bg/90 px-4 py-2.5 text-[11px] text-gfs-muted shadow-lg backdrop-blur-sm">
+              No commits match &ldquo;{searchTerm.trim()}&rdquo;
+            </div>
+          </Panel>
+        ) : null}
         {props.view === "branchTree" ? (
           <Panel
             position="top-left"
@@ -417,6 +540,53 @@ function GraphCanvasBody(props: {
           nodeColor={getNodeColor}
         />
       </ReactFlow>
+      {ctxMenu && props.api ? (
+        <>
+          <div
+            className="fixed inset-0 z-[99]"
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+          />
+          <div
+            role="menu"
+            tabIndex={-1}
+            ref={(el) => el?.focus()}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setCtxMenu(null); } }}
+            className="fixed z-[100] min-w-[160px] rounded-lg border border-gfs-surface2 bg-gfs-bg/95 py-1 shadow-xl backdrop-blur-sm outline-none"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          >
+            {[
+              { label: "Checkout", action: () => props.api!.postMessage({ type: "checkout", branch: ctxMenu.hash }) },
+              { label: "Cherry-pick", action: () => props.api!.postMessage({ type: "cherryPick", hash: ctxMenu.hash }) },
+              { label: "View patch", action: () => props.api!.postMessage({ type: "getShow", hash: ctxMenu.hash }) },
+              { label: "Branch here…", action: () => {
+                const name = window.prompt("New branch at this commit:");
+                if (name?.trim()) {
+                  props.api!.postMessage({ type: "branchCreate", name: name.trim(), checkout: true, startPoint: ctxMenu.hash });
+                }
+              }},
+              { label: "Reset to here…", action: () => {
+                const mode = window.prompt("Reset mode: soft | mixed | hard", "mixed")?.trim().toLowerCase();
+                if (mode && ["soft", "mixed", "hard"].includes(mode)) {
+                  if (window.confirm(`Reset (${mode}) to ${ctxMenu.hash.slice(0, 7)}?`)) {
+                    props.api!.postMessage({ type: "reset", mode, ref: ctxMenu.hash });
+                  }
+                }
+              }},
+            ].map((item) => (
+              <button
+                key={item.label}
+                role="menuitem"
+                type="button"
+                className="flex w-full px-3 py-1.5 text-left text-[11px] text-gfs-text hover:bg-gfs-surface2"
+                onClick={() => { item.action(); setCtxMenu(null); }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
     </motion.div>
   );
 }
@@ -433,6 +603,7 @@ function CommitGraphFilled(props: {
     fromRemote: boolean;
     intoRemote: boolean;
   }) => void;
+  api?: { postMessage: (m: unknown) => void } | null;
 }) {
   if (props.graph.commits.length === 0) {
     return (
@@ -453,6 +624,7 @@ function CommitGraphFilled(props: {
 
 export function CommitGraph(props: {
   graph: GraphPayload | null;
+  loading?: boolean;
   view: CanvasViewMode;
   selected: string | null;
   onSelect: (hash: string | null) => void;
@@ -463,9 +635,10 @@ export function CommitGraph(props: {
     fromRemote: boolean;
     intoRemote: boolean;
   }) => void;
+  api?: { postMessage: (m: unknown) => void } | null;
 }) {
   if (!props.graph) {
-    return <NoRepoPlaceholder />;
+    return props.loading ? <LoadingPlaceholder /> : <NoRepoPlaceholder />;
   }
 
   if (props.graph.isEmptyRepo === true && props.graph.commits.length === 0) {
